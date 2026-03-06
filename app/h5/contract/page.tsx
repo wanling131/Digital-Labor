@@ -230,6 +230,7 @@ export default function ContractPage() {
             </CardContent>
           </Card>
         </div>
+      </div>
 
       {/* Contract List */}
       <div className="px-4 mt-4">

@@ -1,26 +1,10 @@
-# 依赖
+# v0 runtime files
+__v0_runtime_loader.js
+__v0_devtools.tsx
+__v0_jsx-dev-runtime.ts
+
+# Common ignores
 node_modules/
-
-# 后端数据库与上传文件
-server/data/
-server/uploads/
-
-# 环境变量（勿提交密钥）
-.env
-.env.local
-.env.*.local
-*.log
-
-# 前端构建产物
-web/dist/
-web/.next/
-
-# 系统与编辑器
+.next/
+.env*.local
 .DS_Store
-Thumbs.db
-*.swp
-.idea/
-.vscode/
-
-# 第三方/示例（不推送）
-awesome-claude-skills/
