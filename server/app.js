@@ -36,7 +36,7 @@ app.use(cors())
 app.use(express.json())
 
 app.get('/api/health', (_, res) => res.json({ ok: true }))
-app.get('/api', (_, res) => res.json({ name: '数字劳务', api: 'v1', docs: '接口说明见 server/docs/API.md' }))
+app.get('/api', (_, res) => res.json({ name: 'Digital Labor', api: 'v1', docs: '接口说明见 server/docs/API.md' }))
 app.use('/api/auth', auth)
 app.use('/api', (req, res, next) => {
   if (req.path.startsWith('auth')) return next()

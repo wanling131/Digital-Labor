@@ -108,7 +108,7 @@ test('新增人员后 worker-login 返回 token', async () => {
 test('GET /api 返回 name 与 docs', async () => {
   const res = await request.get('/api')
   assert.strictEqual(res.status, 200)
-  assert.strictEqual(res.body?.name, '数字劳务')
+  assert.strictEqual(res.body?.name, 'Digital Labor')
   assert.ok(res.body?.docs)
 })
 

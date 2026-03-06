@@ -75,7 +75,7 @@ export default function HomePage() {
                 </Button>
               </Link>
               <Link href="/h5">
-                <Button size="lg" variant="outline" className="gap-2 w-full sm:w-auto border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10">
+                <Button size="lg" className="gap-2 w-full sm:w-auto bg-primary-foreground/20 text-primary-foreground border border-primary-foreground/30 hover:bg-primary-foreground/30">
                   <Smartphone className="h-5 w-5" />
                   进入移动端
                   <ArrowRight className="h-4 w-4" />

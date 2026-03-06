@@ -138,7 +138,7 @@ router.get('/:id/slip', (req, res) => {
       <tr><th>已发金额</th><td>${s.amount_paid ?? 0}</td></tr>
       <tr><th>状态</th><td>${s.status || ''}</td></tr>
     </table>
-    <div class="foot">数字劳务 · ${new Date().toLocaleDateString()}</div>
+    <div class="foot">Digital Labor · ${new Date().toLocaleDateString()}</div>
   </body></html>`
   const filename = `工资条_${s.period_start}_${s.person_name || s.id}.html`
   res.setHeader('Content-Type', 'text/html; charset=utf-8')

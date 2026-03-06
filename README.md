@@ -1,13 +1,13 @@
-# 数字劳务
+# Digital Labor
 
-数字劳务管理平台，**前后端分离**架构，便于独立开发、构建与部署。
+Digital Labor 管理平台，**前后端分离**架构，便于独立开发、构建与部署。
 
 ---
 
 ## 项目结构
 
 ```
-数字劳务/
+digital-labor/
 ├── web/                        # 前端（Next.js 16 App Router）
 │   ├── app/                    # 页面与布局：/、/pc/*、/h5/*
 │   ├── components/             # UI 与业务组件

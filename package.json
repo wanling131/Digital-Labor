@@ -1,8 +1,8 @@
 {
-  "name": "数字劳务",
+  "name": "digital-labor",
   "version": "1.0.0",
   "private": true,
-  "description": "数字劳务管理平台（前后端分离）",
+  "description": "Digital Labor 管理平台（前后端分离）",
   "scripts": {
     "dev": "concurrently -n api,web \"npm run dev:server\" \"npm run dev:web\"",
     "dev:server": "cd server && npm run dev",
