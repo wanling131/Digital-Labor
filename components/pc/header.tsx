@@ -1,6 +1,6 @@
 "use client"
 
-import { Bell, Search, User, ChevronDown, Moon, Sun } from "lucide-react"
+import { Bell, Search, User, ChevronDown, Moon, Sun, Smartphone } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useState } from "react"
+import Link from "next/link"
 
 export function Header() {
   const [isDark, setIsDark] = useState(false)
