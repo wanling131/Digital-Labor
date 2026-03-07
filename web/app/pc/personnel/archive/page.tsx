@@ -102,9 +102,14 @@ export default function PersonnelArchivePage() {
   const loadList = useCallback(async () => {
     setLoading(true)
     try {
-      const query: Record<string, string | number> = { page, pageSize }
+      const hasKeyword = searchTerm.trim().length > 0
+      const query: Record<string, string | number> = {
+        page: hasKeyword ? 1 : page,
+        pageSize,
+      }
       if (selectedStatus !== "all") query.status = selectedStatus
       if (selectedOrgId !== "all") query.org_id = selectedOrgId
+      if (hasKeyword) query.keyword = searchTerm.trim()
       const res = await api<{ list: unknown[]; total: number }>("/api/person/archive", { query })
       setList((res.list || []) as typeof list)
       setTotal(res.total ?? 0)
@@ -114,7 +119,7 @@ export default function PersonnelArchivePage() {
     } finally {
       setLoading(false)
     }
-  }, [page, pageSize, selectedStatus, selectedOrgId])
+  }, [page, pageSize, selectedStatus, selectedOrgId, searchTerm])
 
   const loadOrg = useCallback(async () => {
     try {
@@ -143,15 +148,7 @@ export default function PersonnelArchivePage() {
     loadStatus()
   }, [loadOrg, loadStatus])
 
-  const filteredBySearch = list.filter((p) => {
-    const term = searchTerm.trim().toLowerCase()
-    if (!term) return true
-    return (
-      (p.name ?? "").toLowerCase().includes(term) ||
-      (p.work_no ?? "").toLowerCase().includes(term) ||
-      (p.org_name ?? "").toLowerCase().includes(term)
-    )
-  })
+  const filteredBySearch = list
 
   const totalCount = statusCounts.reduce((s, r) => s + r.count, 0)
   const realNameCount = statusCounts.filter((r) => r.status !== "预注册").reduce((s, r) => s + r.count, 0)
@@ -455,19 +452,19 @@ export default function PersonnelArchivePage() {
           </div>
         </CardHeader>
         <CardContent>
-          <Table>
+          <Table className="table-fixed w-full">
             <TableHeader>
               <TableRow>
-                <TableHead>工号</TableHead>
-                <TableHead>姓名</TableHead>
-                <TableHead>身份证号</TableHead>
-                <TableHead>手机号</TableHead>
-                <TableHead>所属组织</TableHead>
-                <TableHead>实名</TableHead>
-                <TableHead>合同</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead>入职日期</TableHead>
-                <TableHead className="text-right">操作</TableHead>
+                <TableHead className="w-20">工号</TableHead>
+                <TableHead className="w-24">姓名</TableHead>
+                <TableHead className="w-36">身份证号</TableHead>
+                <TableHead className="w-28">手机号</TableHead>
+                <TableHead className="min-w-[120px]">所属组织</TableHead>
+                <TableHead className="w-20">实名</TableHead>
+                <TableHead className="w-20">合同</TableHead>
+                <TableHead className="w-20">状态</TableHead>
+                <TableHead className="w-24">入职日期</TableHead>
+                <TableHead className="w-16 text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -486,28 +483,28 @@ export default function PersonnelArchivePage() {
               ) : (
                 filteredBySearch.map((person) => (
                   <TableRow key={person.id}>
-                    <TableCell className="font-medium">{person.work_no ?? "—"}</TableCell>
-                    <TableCell>{person.name ?? "—"}</TableCell>
-                    <TableCell className="text-muted-foreground">{maskIdCard(person.id_card)}</TableCell>
-                    <TableCell className="text-muted-foreground">{maskPhone(person.mobile)}</TableCell>
-                    <TableCell>{person.org_name ?? "—"}</TableCell>
-                    <TableCell>
+                    <TableCell className="font-medium align-middle">{person.work_no ?? "—"}</TableCell>
+                    <TableCell className="align-middle">{person.name ?? "—"}</TableCell>
+                    <TableCell className="text-muted-foreground align-middle">{maskIdCard(person.id_card)}</TableCell>
+                    <TableCell className="text-muted-foreground align-middle">{maskPhone(person.mobile)}</TableCell>
+                    <TableCell className="align-middle">{person.org_name ?? "—"}</TableCell>
+                    <TableCell className="align-middle">
                       <Badge variant={person.id_card && person.mobile ? "default" : "secondary"}>
                         {person.id_card && person.mobile ? "已认证" : "未认证"}
                       </Badge>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="align-middle">
                       <Badge variant={person.contract_signed ? "default" : "secondary"}>
                         {person.contract_signed ? "已签约" : "未签约"}
                       </Badge>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="align-middle">
                       <Badge variant="outline" className={statusColors[person.status ?? ""] ?? ""}>
                         {person.status ?? "—"}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{(person.created_at ?? "").slice(0, 10)}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-muted-foreground align-middle">{(person.created_at ?? "").slice(0, 10)}</TableCell>
+                    <TableCell className="text-right align-middle">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">

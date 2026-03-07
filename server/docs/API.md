@@ -45,7 +45,7 @@
 | 方法 | 路径 | 鉴权 | 请求体 | 响应 |
 |------|------|:----:|--------|------|
 | POST | /api/auth/login | 否 | `{ username, password }` | `{ token, user: { id, username, name, role } }` |
-| POST | /api/auth/worker-login | 否 | `{ work_no, name }` 或 `{ person_id }` | `{ token, person: { id, work_no, name, mobile } }` |
+| POST | /api/auth/worker-login | 否 | `{ work_no, name }`、`{ mobile, password }`（演示密码 123456）或 `{ person_id }` | `{ token, person: { id, work_no, name, mobile } }` |
 
 - 登录失败：401/400，body `{ code, message }`（如 `UNAUTHORIZED`、`BAD_REQUEST`）。
 
@@ -143,6 +143,7 @@
 | POST | /api/attendance/import | 管理端 | multipart Excel；表头需含人员/姓名、日期；可选上班、下班、工时、组织；返回 `{ ok, count }` |
 | GET | /api/attendance/report | 管理端 | query `person_id`, `org_id`, `start`, `end`, `page`, `pageSize`；返回 `{ list, total }` |
 | GET | /api/attendance/my | 工人端 | query `person_id`(或登录), `year`, `month`；返回 `{ list }` |
+| POST | /api/attendance/clock | 工人端 | body `{ type: 'in' \| 'out' }`，记录当日上班/下班时间；与首页、考勤页共用 GET /my 数据 |
 
 ---
 
@@ -174,7 +175,7 @@
 | 方法 | 路径 | 鉴权 | 说明 |
 |------|------|:----:|------|
 | POST | /api/site/leave | 管理端 | body `{ person_id }`，离场登记（on_site=0） |
-| GET | /api/site/board | 管理端 | 在岗按组织汇总 `{ projects: [{ org_id, org_name, count }], total }` |
+| GET | /api/site/board | 管理端 | 在岗按组织汇总：`{ projects: [{ org_id, org_name, expected, count }], total, total_expected }`。expected=应在岗(已进场人数)，count=当前在岗(on_site=1)，缺勤=expected−count |
 
 ---
 
@@ -182,7 +183,7 @@
 
 | 方法 | 路径 | 鉴权 | 说明 |
 |------|------|:----:|------|
-| GET | /api/data/board | 管理端 | KPI：`{ total, realNameRate, signRate, onSiteRate }` |
+| GET | /api/data/board | 管理端 | KPI：`{ total, realNameRate, signRate, onSiteRate, totalChangePercent, *RateChange, pendingRealName, contractExpiring, blacklistMatch, teamRank, recentActivities, todos }` |
 | GET | /api/data/board/trend | 管理端 | query `days`(7~90)，返回 `{ trend: [{ date, personCount, signedCount, attendanceCount, totalHours }], start, end }` |
 
 ---
@@ -200,8 +201,9 @@
 
 | 方法 | 路径 | 鉴权 | 说明 |
 |------|------|:----:|------|
-| GET | /api/worker/me | 工人端 | 当前人员档案（含 org_name） |
+| GET | /api/worker/me | 工人端 | 当前人员档案（含 org_name、job_title、work_address；敏感字段脱敏） |
 | PUT | /api/worker/me | 工人端 | body `{ mobile?, id_card? }`，信息补全/修改 |
+| GET | /api/worker/certificates | 工人端 | 当前人员证书列表 `{ list: [{ id, name, certificate_no, issue_date, expiry_date, status }] }` |
 
 ---
 
@@ -217,7 +219,7 @@
 ## 四、数据库与表（参考）
 
 - 数据文件：`server/data/labor.db`（SQLite）。
-- 表：org, user, person, attendance, contract_template, contract_instance, settlement, notification, op_log。
+- 表：org, user, person（含 job_title、work_address）, person_certificate, attendance, contract_template, contract_instance, settlement, notification, op_log。
 - 详见 `server/db/schema.js`。
 
 ---

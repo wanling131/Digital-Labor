@@ -36,8 +36,18 @@ export default function H5LoginPage() {
 
     setLoading(true)
     try {
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      setWorkerToken("demo")
+      const res = await fetch("/api/auth/worker-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mobile: phone.trim(), password: password.trim() }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError((data as { message?: string }).message || "手机号或密码错误")
+        return
+      }
+      const token = (data as { token?: string }).token
+      if (token) setWorkerToken(token)
       router.push("/h5")
     } finally {
       setLoading(false)
@@ -165,32 +175,42 @@ export default function H5LoginPage() {
                     maxLength={11}
                     className="pl-10"
                     disabled={loading}
+                    autoComplete="username"
+                    aria-label="手机号"
                   />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">密码</label>
+                <label htmlFor="h5-password" className="text-sm font-medium">密码</label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" aria-hidden="true" />
                   <Input
+                    id="h5-password"
                     type={showPassword ? "text" : "password"}
                     placeholder="输入密码"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="pl-10 pr-10"
                     disabled={loading}
+                    autoComplete="current-password"
+                    aria-label="密码"
+                    aria-describedby="h5-password-toggle"
                   />
                   <button
                     type="button"
+                    id="h5-password-toggle"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-3"
+                    className="absolute right-3 top-3 p-0.5 rounded-md hover:bg-muted transition-colors"
                     disabled={loading}
+                    aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                    aria-pressed={showPassword}
+                    tabIndex={0}
                   >
                     {showPassword ? (
-                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                      <EyeOff className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
                     ) : (
-                      <Eye className="h-4 w-4 text-muted-foreground" />
+                      <Eye className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
                     )}
                   </button>
                 </div>
@@ -306,10 +326,10 @@ export default function H5LoginPage() {
             </div>
           )}
 
-          {/* 演示账号提示 */}
+          {/* 演示账号提示（与 seed 中首条人员一致：手机号 13800138000，演示密码 123456） */}
           <div className="mt-4 pt-4 border-t border-border">
             <p className="text-xs text-muted-foreground text-center">
-              演示账号: 18800000000 | 密码: 123456
+              演示账号: 13800138000 | 密码: 123456
             </p>
           </div>
         </CardContent>

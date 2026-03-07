@@ -97,6 +97,17 @@ db.exec(`
   }
 })()
 
+// 工种（如：木工、钢筋工）、工作地址（首页展示用）
+;(function addJobTitleAndWorkAddress() {
+  const cols = db.prepare("PRAGMA table_info(person)").all()
+  if (!cols.some((c) => c.name === 'job_title')) {
+    db.exec("ALTER TABLE person ADD COLUMN job_title TEXT")
+  }
+  if (!cols.some((c) => c.name === 'work_address')) {
+    db.exec("ALTER TABLE person ADD COLUMN work_address TEXT")
+  }
+})()
+
 // 考勤记录：人员、日期、上班/下班、工时、项目/班组
 db.exec(`
   CREATE TABLE IF NOT EXISTS attendance (
@@ -177,6 +188,21 @@ db.exec(`
   )
 `)
 
+// 人员证书（特种作业证、安全证等，H5 我的证书用）
+db.exec(`
+  CREATE TABLE IF NOT EXISTS person_certificate (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    person_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    certificate_no TEXT,
+    issue_date TEXT,
+    expiry_date TEXT,
+    status TEXT DEFAULT 'valid',
+    created_at TEXT DEFAULT (datetime('now'))
+  )
+`)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_person_certificate_person_id ON person_certificate(person_id)`)
+
 // 角色-菜单（可配置：某角色可见的菜单 path 列表，与前端 /pc 路由一致）
 db.exec(`
   CREATE TABLE IF NOT EXISTS role_menu (
@@ -206,8 +232,7 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_person_status ON person(status)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_person_on_site ON person(on_site)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_attendance_work_date ON attendance(work_date)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_attendance_person_id ON attendance(person_id)`)
-db.exec(`CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date)`)
-db.exec(`CREATE INDEX IF NOT EXISTS idx_attendance_person_date ON attendance(person_id, date)`)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_attendance_person_work_date ON attendance(person_id, work_date)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_contract_instance_status ON contract_instance(status)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_contract_instance_person ON contract_instance(person_id)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_contract_instance_flow_id ON contract_instance(flow_id)`)
@@ -215,11 +240,8 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_settlement_person_status ON settlement(p
 db.exec(`CREATE INDEX IF NOT EXISTS idx_settlement_period ON settlement(period_start, period_end)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_notification_person_id ON notification(person_id)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_notification_created_at ON notification(created_at)`)
-db.exec(`CREATE INDEX IF NOT EXISTS idx_person_org_id ON person(org_id)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_person_work_no ON person(work_no)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_person_face_verified ON person(face_verified)`)
-db.exec(`CREATE INDEX IF NOT EXISTS idx_salary_person_period ON salary(person_id, period)`)
-db.exec(`CREATE INDEX IF NOT EXISTS idx_worker_attendance_person_date ON worker_attendance(person_id, date)`)
 
 // 默认管理员（密码 123456，与登录页演示账号一致；实际生产建议改为 bcrypt）
 const defaultHash = '123456'

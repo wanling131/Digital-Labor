@@ -40,12 +40,12 @@ const statusConfig = {
 
 export default function AttendancePage() {
   const [currentTime, setCurrentTime] = useState(new Date())
-  const [clockedIn, setClockedIn] = useState(true)
+  const [clockedIn, setClockedIn] = useState(false)
   const [clockedOut, setClockedOut] = useState(false)
+  const [clockInTime, setClockInTime] = useState("")
+  const [clockOutTime, setClockOutTime] = useState("")
   const [isLocating, setIsLocating] = useState(false)
   const [location, setLocation] = useState("上海市浦东新区张江高科技园区")
-  const [clockInTime, setClockInTime] = useState("08:32")
-  const [clockOutTime, setClockOutTime] = useState("")
   const [showSuccess, setShowSuccess] = useState(false)
   const [attendanceRecords, setAttendanceRecords] = useState<AttRecord[]>([])
   const [yearMonth, setYearMonth] = useState({ year: new Date().getFullYear(), month: new Date().getMonth() + 1 })
@@ -69,6 +69,12 @@ export default function AttendancePage() {
         }
       })
       setAttendanceRecords(list)
+      const todayStr = new Date().toISOString().slice(0, 10)
+      const todayRecord = (res.list || []).find((a) => a.work_date === todayStr)
+      setClockedIn(!!todayRecord?.clock_in)
+      setClockedOut(!!todayRecord?.clock_out)
+      setClockInTime(todayRecord?.clock_in ?? "")
+      setClockOutTime(todayRecord?.clock_out ?? "")
     } catch {
       setAttendanceRecords([])
     }
@@ -90,26 +96,38 @@ export default function AttendancePage() {
     await new Promise((resolve) => setTimeout(resolve, 1000))
   }, [loadAttendance])
 
-  const handleClockIn = () => {
+  const handleClockIn = async () => {
     setIsLocating(true)
-    setTimeout(() => {
-      setIsLocating(false)
+    try {
+      await apiWorker("/api/attendance/clock", { method: "POST", body: { type: "in" } })
+      const timeStr = currentTime.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
       setClockedIn(true)
-      setClockInTime(currentTime.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }))
+      setClockInTime(timeStr)
       setShowSuccess(true)
       setTimeout(() => setShowSuccess(false), 2000)
-    }, 1500)
+      await loadAttendance()
+    } catch {
+      setShowSuccess(false)
+    } finally {
+      setIsLocating(false)
+    }
   }
 
-  const handleClockOut = () => {
+  const handleClockOut = async () => {
     setIsLocating(true)
-    setTimeout(() => {
-      setIsLocating(false)
+    try {
+      await apiWorker("/api/attendance/clock", { method: "POST", body: { type: "out" } })
+      const timeStr = currentTime.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
       setClockedOut(true)
-      setClockOutTime(currentTime.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }))
+      setClockOutTime(timeStr)
       setShowSuccess(true)
       setTimeout(() => setShowSuccess(false), 2000)
-    }, 1500)
+      await loadAttendance()
+    } catch {
+      setShowSuccess(false)
+    } finally {
+      setIsLocating(false)
+    }
   }
 
   const handleRelocate = () => {
@@ -256,36 +274,54 @@ export default function AttendancePage() {
             <div className="flex items-center justify-between">
               <CardTitle className="text-base">考勤记录</CardTitle>
               <div className="flex items-center gap-2">
-                <Button variant="ghost" size="icon" className="h-8 w-8">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setYearMonth((prev) => (prev.month <= 1 ? { year: prev.year - 1, month: 12 } : { ...prev, month: prev.month - 1 }))}
+                >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <span className="text-sm">2024年3月</span>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
+                <span className="text-sm">{yearMonth.year}年{yearMonth.month}月</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setYearMonth((prev) => (prev.month >= 12 ? { year: prev.year + 1, month: 1 } : { ...prev, month: prev.month + 1 }))}
+                >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
             </div>
           </CardHeader>
           <CardContent>
-            {/* Monthly Stats */}
-            <div className="grid grid-cols-4 gap-2 mb-4 py-3 bg-muted/30 rounded-lg">
-              <div className="text-center">
-                <p className="text-lg font-bold text-primary">22</p>
-                <p className="text-xs text-muted-foreground">出勤</p>
-              </div>
-              <div className="text-center">
-                <p className="text-lg font-bold text-orange-500">1</p>
-                <p className="text-xs text-muted-foreground">迟到</p>
-              </div>
-              <div className="text-center">
-                <p className="text-lg font-bold text-yellow-500">1</p>
-                <p className="text-xs text-muted-foreground">早退</p>
-              </div>
-              <div className="text-center">
-                <p className="text-lg font-bold text-red-500">0</p>
-                <p className="text-xs text-muted-foreground">缺勤</p>
-              </div>
-            </div>
+            {/* Monthly Stats: 根据当月记录计算 */}
+            {(() => {
+              const present = attendanceRecords.filter((r) => r.clockIn !== "--:--").length
+              const late = attendanceRecords.filter((r) => r.status === "late").length
+              const early = attendanceRecords.filter((r) => r.status === "early").length
+              const absent = attendanceRecords.filter((r) => r.status === "absent").length
+              return (
+                <div className="grid grid-cols-4 gap-2 mb-4 py-3 bg-muted/30 rounded-lg">
+                  <div className="text-center">
+                    <p className="text-lg font-bold text-primary">{present}</p>
+                    <p className="text-xs text-muted-foreground">出勤</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-lg font-bold text-orange-500">{late}</p>
+                    <p className="text-xs text-muted-foreground">迟到</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-lg font-bold text-yellow-500">{early}</p>
+                    <p className="text-xs text-muted-foreground">早退</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-lg font-bold text-red-500">{absent}</p>
+                    <p className="text-xs text-muted-foreground">缺勤</p>
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* Records List */}
             <div className="space-y-2">

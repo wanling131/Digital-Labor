@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -17,14 +17,7 @@ export default function ProfileEditPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
 
-  useEffect(() => {
-    apiWorker<{ mobile?: string; id_card?: string }>("/api/worker/me")
-      .then((me) => {
-        setMobile(me.mobile ?? "")
-        setIdCard(me.id_card ?? "")
-      })
-      .catch(() => {})
-  }, [])
+  // 不预填手机号/身份证（接口返回脱敏值）；仅提交用户填写的新值，留空则不修改
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -56,7 +49,7 @@ export default function ProfileEditPage() {
                 <Input
                   id="mobile"
                   type="tel"
-                  placeholder="请输入手机号"
+                  placeholder="留空则不修改，填写则更新手机号"
                   value={mobile}
                   onChange={(e) => setMobile(e.target.value)}
                 />
@@ -65,7 +58,7 @@ export default function ProfileEditPage() {
                 <Label htmlFor="id_card">身份证号</Label>
                 <Input
                   id="id_card"
-                  placeholder="请输入身份证号"
+                  placeholder="留空则不修改，填写则更新身份证号"
                   value={idCard}
                   onChange={(e) => setIdCard(e.target.value)}
                 />

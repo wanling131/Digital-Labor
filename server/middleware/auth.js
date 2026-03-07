@@ -6,8 +6,9 @@ import jwt from 'jsonwebtoken'
 import { err } from '../lib/response.js'
 import { cache } from '../lib/cache.js'
 
-const SECRET = process.env.JWT_SECRET || 'labor-secret-change-in-prod'
-const TOKEN_VERSION = process.env.TOKEN_VERSION || '1'
+// 运行时读取，避免 ESM 下 dotenv 尚未加载时拿到空值
+const getSecret = () => process.env.JWT_SECRET || 'labor-secret-change-in-prod'
+const getTokenVersion = () => process.env.TOKEN_VERSION || '1'
 
 // Token配置
 const TOKEN_CONFIG = {
@@ -20,7 +21,7 @@ const TOKEN_CONFIG = {
  * 生成访问令牌
  */
 export function signToken(payload) {
-  return jwt.sign({ ...payload, version: TOKEN_VERSION, type: 'access' }, SECRET, { 
+  return jwt.sign({ ...payload, version: getTokenVersion(), type: 'access' }, getSecret(), { 
     expiresIn: TOKEN_CONFIG.accessTokenExpiry 
   })
 }
@@ -29,7 +30,7 @@ export function signToken(payload) {
  * 生成刷新令牌
  */
 export function signRefreshToken(payload) {
-  const refreshToken = jwt.sign({ ...payload, version: TOKEN_VERSION, type: 'refresh' }, SECRET, { 
+  const refreshToken = jwt.sign({ ...payload, version: getTokenVersion(), type: 'refresh' }, getSecret(), { 
     expiresIn: TOKEN_CONFIG.refreshTokenExpiry 
   })
   
@@ -45,17 +46,11 @@ export function signRefreshToken(payload) {
  */
 function verifyToken(token) {
   try {
-    const decoded = jwt.verify(token, SECRET)
+    const decoded = jwt.verify(token, getSecret())
     
     // 检查版本
-    if (decoded.version !== TOKEN_VERSION) {
+    if (decoded.version !== getTokenVersion()) {
       return { valid: false, error: 'Token版本已过期' }
-    }
-    
-    // 检查是否在黑名单中
-    const blacklistKey = `blacklist:${token}`
-    if (cache.get(blacklistKey)) {
-      return { valid: false, error: 'Token已被注销' }
     }
     
     return { valid: true, decoded }
@@ -78,7 +73,14 @@ function shouldRefreshToken(decoded) {
  */
 export function authMiddleware(req, res, next) {
   const auth = req.headers.authorization
-  const token = auth && auth.startsWith('Bearer ') ? auth.slice(7) : null
+  let token = null
+  
+  if (auth && typeof auth === 'string') {
+    const parts = auth.split(' ')
+    if (parts.length === 2 && parts[0] === 'Bearer') {
+      token = parts[1]
+    }
+  }
   
   if (!token) return err(res, 401, '未登录')
   
@@ -93,7 +95,7 @@ export function authMiddleware(req, res, next) {
   // 检查是否需要刷新Token
   if (shouldRefreshToken(result.decoded) && result.decoded.type === 'access') {
     const newToken = signToken({
-      id: result.decoded.id,
+      userId: result.decoded.userId || result.decoded.id,
       username: result.decoded.username,
       role: result.decoded.role,
       workerId: result.decoded.workerId
@@ -175,7 +177,7 @@ export function refreshToken(refreshToken) {
  */
 export function revokeToken(token) {
   try {
-    const decoded = jwt.verify(token, SECRET)
+    const decoded = jwt.verify(token, getSecret())
     const ttl = decoded.exp - Math.floor(Date.now() / 1000)
     
     if (ttl > 0) {

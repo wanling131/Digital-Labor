@@ -71,6 +71,7 @@ export default function SalaryPage() {
   const [selectedRecord, setSelectedRecord] = useState<SalaryRecord | null>(null)
   const [showDetail, setShowDetail] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
+  const [downloadMessage, setDownloadMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
   const [pendingList, setPendingList] = useState<PendingSettlement[]>([])
   const [salaryRecords, setSalaryRecords] = useState<SalaryRecord[]>([])
   const [confirmingId, setConfirmingId] = useState<number | null>(null)
@@ -134,10 +135,18 @@ export default function SalaryPage() {
   }, [loadData])
 
   const handleDownload = async (id: string) => {
+    setDownloadMessage(null)
     setIsDownloading(true)
     try {
       const result = await downloadSettlementSlip(id)
-      if (!result.ok) alert(result.message)
+      if (result.ok) {
+        setDownloadMessage({ type: "success", text: "工资条已下载" })
+        setTimeout(() => setDownloadMessage(null), 2000)
+      } else {
+        setDownloadMessage({ type: "error", text: result.message })
+      }
+    } catch (e) {
+      setDownloadMessage({ type: "error", text: (e as Error).message || "下载失败，请稍后重试" })
     } finally {
       setIsDownloading(false)
     }
@@ -306,6 +315,7 @@ export default function SalaryPage() {
                   )}
                   onClick={() => {
                     setSelectedRecord(record)
+                    setDownloadMessage(null)
                     setShowDetail(true)
                   }}
                 >
@@ -339,7 +349,7 @@ export default function SalaryPage() {
       </div>
 
       {/* Detail Dialog */}
-      <Dialog open={showDetail} onOpenChange={setShowDetail}>
+      <Dialog open={showDetail} onOpenChange={(open) => { setShowDetail(open); if (!open) setDownloadMessage(null) }}>
         <DialogContent className="max-w-sm mx-4">
           <DialogHeader>
             <DialogTitle>{selectedRecord?.month} 工资明细</DialogTitle>
@@ -381,6 +391,14 @@ export default function SalaryPage() {
                 </div>
               </div>
 
+              {downloadMessage && (
+                <p className={cn(
+                  "text-sm text-center py-2 rounded-md",
+                  downloadMessage.type === "success" ? "text-green-600 bg-green-50" : "text-destructive bg-destructive/10"
+                )}>
+                  {downloadMessage.text}
+                </p>
+              )}
               <Button 
                 className="w-full active:scale-95 transition-transform" 
                 variant="outline"

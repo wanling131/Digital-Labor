@@ -2,6 +2,8 @@
  * 虚拟数据种子脚本：导入组织、人员、合同、考勤、结算、通知等，使系统展示更真实健壮
  * - 命令行运行：cd server && node scripts/seed.js（清空后重新插入，可重复执行）
  * - 应用启动时若数据库为空会自动执行一次（见 app.js）
+ * - 保证工作台等前端所需数据均有对应库表与记录：总人数/待实名/环比、待审批合同、待确认结算单、
+ *   即将到期合同、项目与班组分布、人员变动趋势、最新动态、待办数量等。
  */
 import { db, initDb } from '../db/index.js'
 
@@ -21,6 +23,7 @@ function clearSeedData() {
   db.exec(`DELETE FROM attendance`)
   db.exec(`DELETE FROM contract_instance`)
   db.exec(`DELETE FROM contract_template`)
+  try { db.exec(`DELETE FROM person_certificate`) } catch (_) {}
   db.exec(`DELETE FROM person`)
   db.exec(`DELETE FROM user WHERE username != 'admin'`)
   db.exec(`DELETE FROM org`)
@@ -81,12 +84,13 @@ function randomMobile() {
 function seedPersons(orgIds) {
   const teamIds = db.prepare("SELECT id FROM org WHERE type = 'team' ORDER BY id").all().map(r => r.id)
   const ins = db.prepare(`
-    INSERT INTO person (org_id, work_no, name, id_card, mobile, status, contract_signed, on_site)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO person (org_id, work_no, name, id_card, mobile, status, contract_signed, on_site, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
   const statuses = ['预注册', '已实名', '已签约', '已进场', '已进场', '已进场', '已离场', '已离场']
   const personIds = []
   const usedNames = new Set()
+  const now = new Date()
   for (let i = 1; i <= 48; i++) {
     let name = randomName()
     while (usedNames.has(name)) name = randomName()
@@ -95,19 +99,54 @@ function seedPersons(orgIds) {
     const status = statuses[(i - 1) % statuses.length]
     const contract_signed = status === '已签约' || status === '已进场' || status === '已离场' ? 1 : 0
     const on_site = status === '已进场' ? 1 : 0
+    const mobileVal = i === 1 ? '13800138000' : (i <= 45 ? randomMobile() : null)
+    const created = new Date(now)
+    created.setDate(created.getDate() - (90 - Math.floor((i / 48) * 90)))
+    const createdStr = dateTimeStr(created)
     ins.run(
       org_id,
       'W' + String(1000 + i),
       name,
       i <= 40 ? randomIdCard() : null,
-      i <= 45 ? randomMobile() : null,
+      mobileVal,
       status,
       contract_signed,
-      on_site
+      on_site,
+      createdStr
     )
     personIds.push(db.prepare('SELECT last_insert_rowid()').get()['last_insert_rowid()'])
   }
   return personIds
+}
+
+// 3.1 为部分人员补充工种、工作地址（H5 首页展示）
+function seedPersonJobAndAddress(personIds) {
+  const jobs = ['木工', '钢筋工', '混凝土工', '架子工', '水电工', '装修工', '抹灰工', '焊工']
+  const address = '上海市浦东新区张江高科技园区'
+  try {
+    const up = db.prepare('UPDATE person SET job_title = ?, work_address = ? WHERE id = ?')
+    personIds.slice(0, 12).forEach((id, i) => {
+      up.run(jobs[i % jobs.length], i === 0 ? address : null, id)
+    })
+  } catch (_) {}
+}
+
+// 3.2 人员证书（H5 我的证书用）
+function seedPersonCertificates(personIds) {
+  try {
+    const ins = db.prepare(`
+      INSERT INTO person_certificate (person_id, name, certificate_no, issue_date, expiry_date, status)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `)
+    const now = new Date()
+    const exp1 = new Date(now)
+    exp1.setFullYear(exp1.getFullYear() + 1)
+    const exp2 = new Date(now)
+    exp2.setMonth(exp2.getMonth() - 2)
+    ins.run(personIds[0], '特种作业操作证', 'TZ2024001', dateStr(now), dateStr(exp1), 'valid')
+    ins.run(personIds[0], '建筑施工安全证', 'AQ2024001', dateStr(now), dateStr(exp2), 'expiring')
+    if (personIds[1]) ins.run(personIds[1], '高空作业证', 'GK2024001', dateStr(now), dateStr(exp1), 'valid')
+  } catch (_) {}
 }
 
 // 4. 合同模板
@@ -120,7 +159,7 @@ function seedTemplates() {
   return [t1, t1 + 1, t1 + 2]
 }
 
-// 5. 合同实例：待签署 + 已签署
+// 5. 合同实例：待签署 + 已签署（含部分“已签署且 30 天内到期”以支撑工作台「即将到期」）
 function seedContracts(personIds, templateIds) {
   const ins = db.prepare(`
     INSERT INTO contract_instance (template_id, title, person_id, status, deadline, signed_at)
@@ -129,14 +168,23 @@ function seedContracts(personIds, templateIds) {
   const now = new Date()
   const future = new Date(now)
   future.setDate(future.getDate() + 30)
-  // 已签署：部分人员
+  // 已签署：部分人员，signed_at 分散到过去 60 天（支撑趋势图与最新动态）
   for (let i = 0; i < 20; i++) {
     const p = personIds[i]
     const signedAt = new Date(now)
     signedAt.setDate(signedAt.getDate() - Math.floor(Math.random() * 60))
     ins.run(templateIds[i % 3], `2024年度劳务合同-${i + 1}`, p, '已签署', null, dateTimeStr(signedAt))
   }
-  // 待签署
+  // 已签署且 30 天内到期：供工作台「即将到期合同」展示（deadline 在今日起 1～30 天）
+  for (let i = 0; i < 8; i++) {
+    const p = personIds[i + 10]
+    const signedAt = new Date(now)
+    signedAt.setDate(signedAt.getDate() - 30)
+    const deadlineDate = new Date(now)
+    deadlineDate.setDate(deadlineDate.getDate() + 3 + i * 3)
+    ins.run(templateIds[0], `即将到期合同-${i + 1}`, p, '已签署', dateStr(deadlineDate), dateTimeStr(signedAt))
+  }
+  // 待签署（支撑「待审批合同」）
   for (let i = 20; i < 35; i++) {
     ins.run(templateIds[0], '新项目入场协议', personIds[i], '待签署', dateStr(future), null)
   }
@@ -245,6 +293,8 @@ export function runSeed(clearFirst = true) {
   const orgIds = seedOrg()
   seedUsers(orgIds)
   const personIds = seedPersons(orgIds)
+  seedPersonJobAndAddress(personIds)
+  seedPersonCertificates(personIds)
   const templateIds = seedTemplates()
   seedContracts(personIds, templateIds)
   seedAttendance(personIds)
@@ -261,6 +311,7 @@ export function runSeed(clearFirst = true) {
     settlement: db.prepare('SELECT COUNT(*) as n FROM settlement').get().n,
     notification: db.prepare('SELECT COUNT(*) as n FROM notification').get().n,
     op_log: db.prepare('SELECT COUNT(*) as n FROM op_log').get().n,
+    person_certificate: (() => { try { return db.prepare('SELECT COUNT(*) as n FROM person_certificate').get().n } catch { return 0 } })(),
   }
 }
 

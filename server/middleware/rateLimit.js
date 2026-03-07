@@ -5,12 +5,12 @@
 
 import { cache } from '../lib/cache.js'
 
-// 限流配置
+// 限流配置（登录允许多次以便自动化测试中每用例独立登录）
 const RATE_LIMIT_CONFIG = {
   // 登录接口限制
   login: {
     windowMs: 15 * 60 * 1000, // 15分钟
-    maxRequests: 5, // 最多5次
+    maxRequests: 30, // 满足单次测试套件内多次登录
     message: '登录尝试次数过多，请15分钟后重试'
   },
   // 人脸验证接口限制

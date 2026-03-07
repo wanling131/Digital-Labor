@@ -2,6 +2,7 @@
  * 后端 API 自动化测试（非开发可读：用脚本检查接口是否按预期返回）
  * 执行：在 server 目录下 npm test
  */
+process.env.NODE_ENV = 'test'
 import test from 'node:test'
 import assert from 'node:assert'
 import supertest from 'supertest'
@@ -84,13 +85,18 @@ test('POST /api/sys/org 新增后 GET 树中包含', async () => {
   assert.ok(create.body?.id)
 })
 
-// 用例10：在岗看板返回 projects 与 total
+// 用例10：在岗看板返回 projects、total、total_expected，每项含 expected 与 count
 test('带 token 可 GET /api/site/board', async () => {
   const login = await request.post('/api/auth/login').send({ username: 'admin', password: '123456' })
   const res = await request.get('/api/site/board').set('Authorization', `Bearer ${login.body.token}`)
   assert.strictEqual(res.status, 200)
   assert.ok(Array.isArray(res.body?.projects))
   assert.ok(typeof res.body?.total === 'number')
+  assert.ok(typeof res.body?.total_expected === 'number')
+  res.body.projects.forEach((p) => {
+    assert.ok(typeof p.expected === 'number')
+    assert.ok(typeof p.count === 'number')
+  })
 })
 
 // 用例11：新增人员后工人端可用姓名登录
@@ -136,4 +142,25 @@ test('POST /api/settlement/push-notify 带 token 可成功', async () => {
   assert.strictEqual(res.status, 200)
   assert.strictEqual(res.body?.ok, true)
   assert.ok(typeof res.body?.count === 'number')
+})
+
+// 用例16：工人端 token 可 GET /api/worker/certificates（用用例11创建的人员登录）
+test('工人端 token 可 GET /api/worker/certificates', async () => {
+  const login = await request.post('/api/auth/login').send({ username: 'admin', password: '123456' })
+  await request.post('/api/person/archive').set('Authorization', `Bearer ${login.body.token}`).send({ name: 'CertTest', work_no: 'CT1' })
+  const wLogin = await request.post('/api/auth/worker-login').send({ name: 'CertTest' })
+  assert.strictEqual(wLogin.status, 200)
+  const res = await request.get('/api/worker/certificates').set('Authorization', `Bearer ${wLogin.body.token}`)
+  assert.strictEqual(res.status, 200)
+  assert.ok(Array.isArray(res.body?.list))
+})
+
+// 用例17：工人端 token 可 POST /api/attendance/clock
+test('工人端 token 可 POST /api/attendance/clock', async () => {
+  const wLogin = await request.post('/api/auth/worker-login').send({ name: 'CertTest' })
+  assert.strictEqual(wLogin.status, 200)
+  const res = await request.post('/api/attendance/clock').set('Authorization', `Bearer ${wLogin.body.token}`).send({ type: 'in' })
+  assert.strictEqual(res.status, 200)
+  assert.strictEqual(res.body?.ok, true)
+  assert.ok(res.body?.work_date)
 })

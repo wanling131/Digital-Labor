@@ -100,4 +100,31 @@ router.get('/my', (req, res) => {
   res.json({ list })
 })
 
+// 工人端打卡：body { type: 'in' | 'out' }，记录当日上班/下班时间，与首页/考勤页共用 GET /my 数据
+router.post('/clock', (req, res) => {
+  const person_id = req.user?.workerId
+  if (!person_id) return res.status(401).json({ message: '请登录' })
+  const { type } = req.body || {}
+  if (type !== 'in' && type !== 'out') return res.status(400).json({ message: 'type 必填且为 in 或 out' })
+  const now = new Date()
+  const workDate = now.toISOString().slice(0, 10)
+  const timeStr = now.toTimeString().slice(0, 5)
+  const person = db.prepare('SELECT org_id FROM person WHERE id = ?').get(person_id)
+  const org_id = person?.org_id ?? null
+  const row = db.prepare('SELECT id, clock_in, clock_out FROM attendance WHERE person_id = ? AND work_date = ?').get(person_id, workDate)
+  if (row) {
+    if (type === 'in') {
+      db.prepare('UPDATE attendance SET clock_in = ? WHERE id = ?').run(timeStr, row.id)
+    } else {
+      db.prepare('UPDATE attendance SET clock_out = ? WHERE id = ?').run(timeStr, row.id)
+    }
+  } else {
+    db.prepare(`
+      INSERT INTO attendance (person_id, org_id, work_date, clock_in, clock_out)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(person_id, org_id, workDate, type === 'in' ? timeStr : null, type === 'out' ? timeStr : null)
+  }
+  res.json({ ok: true, work_date: workDate, [type === 'in' ? 'clock_in' : 'clock_out']: timeStr })
+})
+
 export default router

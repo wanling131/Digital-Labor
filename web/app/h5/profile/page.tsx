@@ -28,7 +28,8 @@ import {
   CheckCircle2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { apiWorker } from "@/lib/api"
+import { apiWorker, setWorkerToken } from "@/lib/api"
+import { useRouter } from "next/navigation"
 
 const menuItems = [
   {
@@ -70,26 +71,35 @@ const menuItems = [
   },
 ]
 
-const certifications = [
-  { name: "特种作业操作证", status: "valid", expiry: "2025-06-30" },
-  { name: "建筑施工安全证", status: "valid", expiry: "2024-12-31" },
-  { name: "高空作业证", status: "expiring", expiry: "2024-04-15" },
-]
+interface CertItem {
+  id: number
+  name: string
+  expiry_date?: string | null
+  status: string
+}
 
 export default function ProfilePage() {
+  const router = useRouter()
   const [notificationEnabled, setNotificationEnabled] = useState(true)
   const [workerId, setWorkerId] = useState<number | null>(null)
   const [faceVerifying, setFaceVerifying] = useState(false)
   const [faceResult, setFaceResult] = useState<"idle" | "success" | "fail">("idle")
-  const [me, setMe] = useState<{ name?: string; work_no?: string; org_name?: string; mobile?: string; status?: string; id_card?: string } | null>(null)
+  const [me, setMe] = useState<{ name?: string; work_no?: string; org_name?: string; mobile?: string; status?: string; id_card?: string; bank_card?: string } | null>(null)
+  const [certificates, setCertificates] = useState<CertItem[]>([])
 
   useEffect(() => {
-    apiWorker<{ id?: number; name?: string; work_no?: string; org_name?: string; mobile?: string; status?: string; id_card?: string }>("/api/worker/me")
+    apiWorker<{ id?: number; name?: string; work_no?: string; org_name?: string; mobile?: string; status?: string; id_card?: string; bank_card?: string }>("/api/worker/me")
       .then((res) => {
         setWorkerId(res.id ?? null)
         setMe(res)
       })
       .catch(() => setMe(null))
+  }, [])
+
+  useEffect(() => {
+    apiWorker<{ list: CertItem[] }>("/api/worker/certificates")
+      .then((res) => setCertificates(res.list || []))
+      .catch(() => setCertificates([]))
   }, [])
 
   const handleFaceVerify = useCallback(async () => {
@@ -227,26 +237,32 @@ export default function ProfilePage() {
               </Link>
             </div>
             <div className="space-y-2">
-              {certifications.map((cert, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between py-2 border-b border-border last:border-0"
-                >
-                  <div>
-                    <p className="font-medium text-sm">{cert.name}</p>
-                    <p className="text-xs text-muted-foreground">有效期至 {cert.expiry}</p>
-                  </div>
-                  <Badge
-                    className={
-                      cert.status === "valid"
-                        ? "bg-green-100 text-green-700"
-                        : "bg-orange-100 text-orange-700"
-                    }
-                  >
-                    {cert.status === "valid" ? "有效" : "即将过期"}
-                  </Badge>
-                </div>
-              ))}
+              {certificates.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-2">暂无证书记录</p>
+              ) : (
+                certificates.slice(0, 3).map((cert) => {
+                  const isExpired = cert.expiry_date && new Date(cert.expiry_date) < new Date()
+                  const isExpiring = cert.status === "expiring" || (cert.expiry_date && new Date(cert.expiry_date) < new Date(Date.now() + 90 * 86400000))
+                  return (
+                    <div
+                      key={cert.id}
+                      className="flex items-center justify-between py-2 border-b border-border last:border-0"
+                    >
+                      <div>
+                        <p className="font-medium text-sm">{cert.name}</p>
+                        <p className="text-xs text-muted-foreground">有效期至 {cert.expiry_date || "—"}</p>
+                      </div>
+                      <Badge
+                        className={
+                          isExpired ? "bg-gray-100 text-gray-700" : isExpiring ? "bg-orange-100 text-orange-700" : "bg-green-100 text-green-700"
+                        }
+                      >
+                        {isExpired ? "已过期" : isExpiring ? "即将过期" : "有效"}
+                      </Badge>
+                    </div>
+                  )
+                })
+              )}
             </div>
           </CardContent>
         </Card>
@@ -270,12 +286,20 @@ export default function ProfilePage() {
                 </div>
                 <div className="flex-1">
                   <p className="font-medium text-sm">{item.label}</p>
-                  <p className="text-xs text-muted-foreground">{item.desc}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {item.href === "/h5/profile/bank"
+                      ? (me?.bank_card || "暂无绑定")
+                      : item.href === "/h5/profile/certificates"
+                        ? (certificates.length ? `${certificates.length}个证书` : "暂无证书")
+                        : item.desc}
+                  </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  {item.badge && (
-                    <Badge className="bg-primary text-primary-foreground">{item.badge}</Badge>
-                  )}
+                  {(item.href === "/h5/profile/certificates" ? certificates.length : item.badge) ? (
+                    <Badge className="bg-primary text-primary-foreground">
+                      {item.href === "/h5/profile/certificates" ? certificates.length : item.badge}
+                    </Badge>
+                  ) : null}
                   <ChevronRight className="h-4 w-4 text-muted-foreground" />
                 </div>
               </Link>
@@ -312,6 +336,10 @@ export default function ProfilePage() {
         <Button 
           variant="outline" 
           className="w-full text-destructive hover:text-destructive hover:bg-destructive/10 active:scale-95 transition-transform"
+          onClick={() => {
+            setWorkerToken(null)
+            router.replace("/h5/login")
+          }}
         >
           <LogOut className="h-4 w-4 mr-2" />
           退出登录

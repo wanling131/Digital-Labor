@@ -73,7 +73,7 @@ export function decrypt(encryptedData) {
     
     return decrypted
   } catch (error) {
-    console.error('[解密] 失败:', error)
+    if (process.env.DEBUG_CRYPTO) console.error('[解密] 失败:', error)
     throw new Error('解密失败')
   }
 }

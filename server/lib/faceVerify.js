@@ -240,7 +240,16 @@ export const mockFaceVerifyService = {
 }
 
 // 根据环境选择服务
-const isProduction = process.env.NODE_ENV === 'production'
+const faceVerifyEnabled = process.env.FACE_VERIFY_ENABLED !== 'false'
 const hasAliyunConfig = ALIYUN_CONFIG.accessKeyId && ALIYUN_CONFIG.accessKeySecret
 
-export default (isProduction && hasAliyunConfig) ? faceVerifyService : mockFaceVerifyService
+// 优先使用真实服务（只要配置了密钥），否则使用模拟服务
+const useRealService = faceVerifyEnabled && hasAliyunConfig
+
+if (useRealService) {
+  console.log('[FaceVerify] 使用阿里云人脸验证服务')
+} else {
+  console.log('[FaceVerify] 使用模拟人脸验证服务（开发测试用）')
+}
+
+export default useRealService ? faceVerifyService : mockFaceVerifyService

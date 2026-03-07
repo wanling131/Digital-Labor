@@ -12,7 +12,7 @@ import { faceVerifyRateLimit } from '../middleware/rateLimit.js'
 const router = Router()
 
 router.get('/archive', (req, res) => {
-  const { status, org_id, on_site, filled, contract_signed } = req.query
+  const { status, org_id, on_site, filled, contract_signed, keyword } = req.query
   const { limit, offset, page, pageSize } = parsePagination(req.query)
   const where = []
   const params = []
@@ -24,19 +24,24 @@ router.get('/archive', (req, res) => {
   if (filled === '0') { where.push("(TRIM(COALESCE(p.id_card,'')) = '' OR TRIM(COALESCE(p.mobile,'')) = '')"); }
   if (contract_signed === '0') { where.push('p.contract_signed = 0'); }
   if (contract_signed === '1') { where.push('p.contract_signed = 1'); }
+  const kw = typeof keyword === 'string' ? keyword.trim() : ''
+  if (kw) {
+    where.push('(p.name LIKE ? OR p.work_no LIKE ? OR o.name LIKE ?)')
+    const like = '%' + kw + '%'
+    params.push(like, like, like)
+  }
   const whereStr = where.length ? ' AND ' + where.join(' AND ') : ''
-  const total = db.prepare('SELECT COUNT(*) as n FROM person p WHERE 1=1' + whereStr).get(...params).n
+  const total = db.prepare('SELECT COUNT(*) as n FROM person p LEFT JOIN org o ON p.org_id = o.id WHERE 1=1' + whereStr).get(...params).n
   const list = db.prepare('SELECT p.*, o.name as org_name FROM person p LEFT JOIN org o ON p.org_id = o.id WHERE 1=1' + whereStr + ' ORDER BY p.id DESC LIMIT ? OFFSET ?').all(...params, limit, offset)
 
-  // 解密并脱敏敏感数据
   const maskedList = list.map(person => ({
     ...person,
-    id_card: person.id_card ? maskSensitiveData(decrypt(person.id_card), 'idCard') : person.id_card,
-    mobile: person.mobile ? maskSensitiveData(decrypt(person.mobile), 'mobile') : person.mobile,
-    bank_card: person.bank_card ? maskSensitiveData(decrypt(person.bank_card), 'bankCard') : person.bank_card
+    id_card: person.id_card ? safeDecryptThenMask(person.id_card, 'idCard') : person.id_card,
+    mobile: person.mobile ? safeDecryptThenMask(person.mobile, 'mobile') : person.mobile,
+    bank_card: person.bank_card ? safeDecryptThenMask(person.bank_card, 'bankCard') : person.bank_card
   }))
 
-  res.json({ list: maskedList, total, page, pageSize })
+  res.json({ list: maskedList, total: Number(total), page, pageSize })
 })
 
 router.get('/archive/:id', (req, res) => {
@@ -106,16 +111,33 @@ router.post('/status/batch', (req, res) => {
   res.json({ ok: true })
 })
 
-/** 认证管理列表：人员身份证/手机/签名补全状态，支持按已补全筛选 */
+/** 解密并脱敏（与 archive 一致：历史明文则直接脱敏） */
+function safeDecryptThenMask(value, type) {
+  if (!value) return value
+  try {
+    const decrypted = decrypt(value)
+    return maskSensitiveData(decrypted, type)
+  } catch {
+    return maskSensitiveData(String(value), type)
+  }
+}
+
+/** 认证管理列表：人员身份证/手机/签名补全状态，支持按已补全筛选；与人员档案同源 person 表，敏感字段脱敏一致 */
 router.get('/auth', (req, res) => {
-  const { filled, page = 1, pageSize = 20 } = req.query
+  const { filled, page = 1, pageSize = 20, keyword } = req.query
   const { limit, offset } = parsePagination(req.query)
   const where = []
   const params = []
   if (filled === '1') { where.push("TRIM(COALESCE(p.id_card,'')) != '' AND TRIM(COALESCE(p.mobile,'')) != ''"); }
   if (filled === '0') { where.push("(TRIM(COALESCE(p.id_card,'')) = '' OR TRIM(COALESCE(p.mobile,'')) = '')"); }
+  const kw = typeof keyword === 'string' ? keyword.trim() : ''
+  if (kw) {
+    where.push('(p.name LIKE ? OR p.work_no LIKE ? OR o.name LIKE ?)')
+    const like = '%' + kw + '%'
+    params.push(like, like, like)
+  }
   const whereStr = where.length ? ' AND ' + where.join(' AND ') : ''
-  const total = db.prepare('SELECT COUNT(*) as n FROM person p WHERE 1=1' + whereStr).get(...params).n
+  const total = db.prepare('SELECT COUNT(*) as n FROM person p LEFT JOIN org o ON p.org_id = o.id WHERE 1=1' + whereStr).get(...params).n
   const list = db.prepare(`
     SELECT p.id, p.work_no, p.name, p.id_card, p.mobile, p.status, p.updated_at, p.auth_review_status, o.name as org_name
     FROM person p LEFT JOIN org o ON p.org_id = o.id
@@ -123,13 +145,19 @@ router.get('/auth', (req, res) => {
     ORDER BY p.updated_at DESC
     LIMIT ? OFFSET ?
   `).all(...params, limit, offset)
-  const withFlags = list.map((r) => ({
-    ...r,
-    id_filled: !!(r.id_card && String(r.id_card).trim()),
-    mobile_filled: !!(r.mobile && String(r.mobile).trim()),
-    filled: !!(r.id_card && String(r.id_card).trim() && r.mobile && String(r.mobile).trim()),
-  }))
-  res.json({ list: withFlags, total, page: Math.max(1, parseInt(page) || 1), pageSize: Math.min(100, Math.max(1, parseInt(pageSize) || 20)) })
+  const withFlags = list.map((r) => {
+    const idFilled = !!(r.id_card && String(r.id_card).trim())
+    const mobileFilled = !!(r.mobile && String(r.mobile).trim())
+    return {
+      ...r,
+      id_card: r.id_card ? safeDecryptThenMask(r.id_card, 'idCard') : r.id_card,
+      mobile: r.mobile ? safeDecryptThenMask(r.mobile, 'mobile') : r.mobile,
+      id_filled: idFilled,
+      mobile_filled: mobileFilled,
+      filled: idFilled && mobileFilled,
+    }
+  })
+  res.json({ list: withFlags, total: Number(total), page: Math.max(1, parseInt(page) || 1), pageSize: Math.min(100, Math.max(1, parseInt(pageSize) || 20)) })
 })
 
 /** 人工审核：通过/驳回（认证管理） */

@@ -23,6 +23,7 @@ import {
   RefreshCw,
 } from "lucide-react"
 import Link from "next/link"
+import { cn } from "@/lib/utils"
 import { getWorkerToken, apiWorker } from "@/lib/api"
 
 const quickActions = [
@@ -49,6 +50,12 @@ export default function H5HomePage() {
   const [notifications, setNotifications] = useState<NotifItem[]>([])
   const [workerName, setWorkerName] = useState<string>("")
   const [orgName, setOrgName] = useState<string>("")
+  const [workNo, setWorkNo] = useState<string>("")
+  const [jobTitle, setJobTitle] = useState<string>("")
+  const [workAddress, setWorkAddress] = useState<string>("")
+  const [todayClockIn, setTodayClockIn] = useState<string>("")
+  const [todayClockOut, setTodayClockOut] = useState<string>("")
+  const [monthStats, setMonthStats] = useState<{ workDays: number; workHours: number; salary: number }>({ workDays: 0, workHours: 0, salary: 0 })
   const greeting = currentTime.getHours() < 12 ? "上午好" : currentTime.getHours() < 18 ? "下午好" : "晚上好"
 
   useEffect(() => {
@@ -63,15 +70,45 @@ export default function H5HomePage() {
   const loadData = useCallback(async () => {
     if (!getWorkerToken()) return
     try {
-      const [notifRes, meRes] = await Promise.all([
+      const now = new Date()
+      const year = now.getFullYear()
+      const month = now.getMonth() + 1
+      const [notifRes, meRes, attRes] = await Promise.all([
         apiWorker<{ list: NotifItem[] }>("/api/notify/list", { query: { pageSize: 5 } }),
-        apiWorker<{ name?: string; org_name?: string }>("/api/worker/me"),
+        apiWorker<{ name?: string; org_name?: string; work_no?: string; job_title?: string; work_address?: string }>("/api/worker/me"),
+        apiWorker<{ list: { work_date?: string; clock_in?: string; clock_out?: string }[] }>("/api/attendance/my", {
+          query: { year, month },
+        }),
       ])
       setNotifications(notifRes.list || [])
       setWorkerName(meRes.name ?? "")
       setOrgName(meRes.org_name ?? "")
+      setWorkNo(meRes.work_no ?? "")
+      setJobTitle(meRes.job_title ?? "")
+      setWorkAddress(meRes.work_address ?? "")
+      const todayStr = now.toISOString().slice(0, 10)
+      const todayRecord = (attRes.list || []).find((a) => a.work_date === todayStr)
+      setTodayClockIn(todayRecord?.clock_in ?? "")
+      setTodayClockOut(todayRecord?.clock_out ?? "")
+      const list = attRes.list || []
+      const workDays = list.filter((a: { clock_in?: string }) => a.clock_in).length
+      const workHours = Math.round(list.reduce((s: number, a: { hours?: number }) => s + (Number(a.hours) || 0), 0) * 10) / 10
+      let salary = 0
+      try {
+        const settleRes = await apiWorker<{ list: { amount_due?: number; amount_paid?: number; period_start?: string }[] }>("/api/settlement/my", { query: { pageSize: 12 } })
+        const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+        const cur = (settleRes.list || []).find((s) => s.period_start?.slice(0, 7) === currentYm)
+        if (cur) salary = Math.round((Number(cur.amount_paid) || Number(cur.amount_due) || 0) * 100) / 100
+      } catch {}
+      setMonthStats({ workDays, workHours, salary })
     } catch {
       setNotifications([])
+      setWorkNo("")
+      setJobTitle("")
+      setWorkAddress("")
+      setTodayClockIn("")
+      setTodayClockOut("")
+      setMonthStats({ workDays: 0, workHours: 0, salary: 0 })
     }
   }, [])
 
@@ -127,11 +164,11 @@ export default function H5HomePage() {
             </div>
             <div className="flex items-center gap-2 text-primary-foreground/80 text-sm mb-2">
               <Briefcase className="h-4 w-4" />
-              <span>木工 | 工号: HQ20240315</span>
+              <span>{jobTitle && workNo ? `${jobTitle} | 工号: ${workNo}` : workNo ? `工号: ${workNo}` : jobTitle || "—"}</span>
             </div>
             <div className="flex items-center gap-2 text-primary-foreground/80 text-sm">
               <MapPin className="h-4 w-4" />
-              <span>上海市浦东新区张江高科技园区</span>
+              <span>{workAddress || "—"}</span>
             </div>
           </CardContent>
         </Card>
@@ -173,19 +210,33 @@ export default function H5HomePage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-muted/50 rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <CheckCircle2 className="h-5 w-5 text-green-500" />
+                  {todayClockIn ? (
+                    <CheckCircle2 className="h-5 w-5 text-green-500" />
+                  ) : (
+                    <AlertCircle className="h-5 w-5 text-muted-foreground" />
+                  )}
                   <span className="text-sm text-muted-foreground">上班打卡</span>
                 </div>
-                <p className="text-xl font-bold">08:32</p>
-                <p className="text-xs text-green-500 mt-1">正常</p>
+                <p className="text-xl font-bold">{todayClockIn || "--:--"}</p>
+                <p className={cn("text-xs mt-1", todayClockIn ? "text-green-500" : "text-muted-foreground")}>
+                  {todayClockIn ? "正常" : "未打卡"}
+                </p>
               </div>
               <div className="bg-muted/50 rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <AlertCircle className="h-5 w-5 text-muted-foreground" />
+                  {todayClockOut ? (
+                    <CheckCircle2 className="h-5 w-5 text-green-500" />
+                  ) : (
+                    <AlertCircle className="h-5 w-5 text-muted-foreground" />
+                  )}
                   <span className="text-sm text-muted-foreground">下班打卡</span>
                 </div>
-                <p className="text-xl font-bold text-muted-foreground">--:--</p>
-                <p className="text-xs text-muted-foreground mt-1">未打卡</p>
+                <p className={cn("text-xl font-bold", todayClockOut ? "" : "text-muted-foreground")}>
+                  {todayClockOut || "--:--"}
+                </p>
+                <p className={cn("text-xs mt-1", todayClockOut ? "text-green-500" : "text-muted-foreground")}>
+                  {todayClockOut ? "正常" : "未打卡"}
+                </p>
               </div>
             </div>
             <Link href="/h5/attendance">
@@ -210,15 +261,15 @@ export default function H5HomePage() {
             </div>
             <div className="grid grid-cols-3 gap-4 text-center">
               <div>
-                <p className="text-2xl font-bold text-primary">22</p>
+                <p className="text-2xl font-bold text-primary">{monthStats.workDays}</p>
                 <p className="text-xs text-muted-foreground">出勤天数</p>
               </div>
               <div>
-                <p className="text-2xl font-bold text-orange-500">176</p>
+                <p className="text-2xl font-bold text-orange-500">{monthStats.workHours}</p>
                 <p className="text-xs text-muted-foreground">工时(小时)</p>
               </div>
               <div>
-                <p className="text-2xl font-bold text-green-500">8,500</p>
+                <p className="text-2xl font-bold text-green-500">{monthStats.salary > 0 ? monthStats.salary.toLocaleString() : "—"}</p>
                 <p className="text-xs text-muted-foreground">预计工资</p>
               </div>
             </div>

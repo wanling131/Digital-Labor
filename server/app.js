@@ -4,7 +4,11 @@
  */
 import express from 'express'
 import cors from 'cors'
+import { config } from 'dotenv'
 import { db, initDb } from './db/index.js'
+
+// 加载环境变量
+config()
 import { runSeed } from './scripts/seed.js'
 import { authMiddleware } from './middleware/auth.js'
 import { logMiddleware } from './middleware/log.js'
@@ -43,10 +47,14 @@ app.use(performanceMiddleware)
 app.get('/api/health', (_, res) => res.json({ ok: true }))
 app.get('/api', (_, res) => res.json({ name: 'Digital Labor', api: 'v1', docs: '接口说明见 server/docs/API.md' }))
 app.use('/api/auth', auth)
+
+// 认证中间件（应用到所有需要认证的路由）
 app.use('/api', (req, res, next) => {
-  if (req.path.startsWith('auth')) return next()
+  // 跳过认证路径
+  if (req.path.startsWith('/auth')) return next()
   authMiddleware(req, res, next)
 }, logMiddleware)
+
 app.use('/api/person', person)
 app.use('/api/contract', contract)
 app.use('/api/attendance', attendance)

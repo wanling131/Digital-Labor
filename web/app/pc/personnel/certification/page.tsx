@@ -79,6 +79,7 @@ export default function CertificationPage() {
     const params = new URLSearchParams()
     if (filledTab === "1") params.set("filled", "1")
     if (filledTab === "0") params.set("filled", "0")
+    if (searchTerm.trim()) params.set("keyword", searchTerm.trim())
     params.set("pageSize", "50")
     api<{ list: AuthRecord[]; total: number }>(`/api/person/auth?${params}`)
       .then((res) => {
@@ -92,7 +93,7 @@ export default function CertificationPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [filledTab])
+  }, [filledTab, searchTerm])
 
   const handleAuthReview = useCallback(async (personId: number, status: "approved" | "rejected") => {
     setReviewingId(personId)
@@ -108,13 +109,7 @@ export default function CertificationPage() {
     loadList()
   }, [loadList])
 
-  const filteredRecords = list.filter(
-    (r) =>
-      !searchTerm ||
-      (r.name || "").includes(searchTerm) ||
-      (r.work_no || "").includes(searchTerm) ||
-      (r.id_card || "").includes(searchTerm)
-  )
+  const filteredRecords = list
 
   const filledCount = list.filter((r) => r.filled).length
   const getStatusBadge = (filled: boolean) => (
@@ -134,12 +129,12 @@ export default function CertificationPage() {
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="rounded-full bg-primary/10 p-3">
+            <div className="flex items-start gap-4">
+              <div className="rounded-full bg-primary/10 p-3 shrink-0">
                 <CreditCard className="h-5 w-5 text-primary" />
               </div>
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">身份证登记</p>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-muted-foreground min-h-[2.5rem]">身份证登记</p>
                 <p className="text-2xl font-bold">{list.filter((r) => r.id_filled).length}</p>
                 <p className="text-xs text-muted-foreground">共 {total} 人</p>
               </div>
@@ -148,12 +143,12 @@ export default function CertificationPage() {
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="rounded-full bg-accent/10 p-3">
+            <div className="flex items-start gap-4">
+              <div className="rounded-full bg-accent/10 p-3 shrink-0">
                 <Smartphone className="h-5 w-5 text-accent" />
               </div>
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">手机绑定</p>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-muted-foreground min-h-[2.5rem]">手机绑定</p>
                 <p className="text-2xl font-bold">{list.filter((r) => r.mobile_filled).length}</p>
                 <p className="text-xs text-muted-foreground">共 {total} 人</p>
               </div>
@@ -162,12 +157,12 @@ export default function CertificationPage() {
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="rounded-full bg-chart-3/10 p-3">
+            <div className="flex items-start gap-4">
+              <div className="rounded-full bg-chart-3/10 p-3 shrink-0">
                 <Camera className="h-5 w-5 text-chart-3" />
               </div>
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">人脸采集</p>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-muted-foreground min-h-[2.5rem]">人脸采集</p>
                 <p className="text-2xl font-bold">—</p>
                 <p className="text-xs text-muted-foreground">对接后展示</p>
               </div>
@@ -176,12 +171,12 @@ export default function CertificationPage() {
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="rounded-full bg-chart-5/10 p-3">
+            <div className="flex items-start gap-4">
+              <div className="rounded-full bg-chart-5/10 p-3 shrink-0">
                 <PenTool className="h-5 w-5 text-chart-5" />
               </div>
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">已补全（身份证+手机）</p>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-muted-foreground min-h-[2.5rem]">已补全（身份证+手机）</p>
                 <p className="text-2xl font-bold">{filledCount}</p>
                 <p className="text-xs text-muted-foreground">共 {total} 人</p>
               </div>

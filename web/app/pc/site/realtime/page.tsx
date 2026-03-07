@@ -30,12 +30,14 @@ import { api } from "@/lib/api"
 interface SiteBoardProject {
   org_id: number
   org_name: string
+  expected: number
   count: number
 }
 
 interface SiteBoardRes {
   projects: SiteBoardProject[]
   total: number
+  total_expected: number
 }
 
 const realtimeWorkers = [
@@ -65,7 +67,7 @@ export default function RealtimePage() {
       const res = await api<SiteBoardRes>("/api/site/board")
       setBoard(res)
     } catch {
-      setBoard({ projects: [], total: 0 })
+      setBoard({ projects: [], total: 0, total_expected: 0 })
     }
   }, [])
 
@@ -90,17 +92,23 @@ export default function RealtimePage() {
   }, [fetchBoard])
 
   const projectStats = board
-    ? board.projects.map((p) => ({
-        id: p.org_id,
-        name: p.org_name || `组织${p.org_id}`,
-        total: p.count,
-        present: p.count,
-        absent: 0,
-        rate: 100,
-      }))
+    ? board.projects.map((p) => {
+        const expected = p.expected ?? 0
+        const present = p.count ?? 0
+        return {
+          id: p.org_id,
+          name: p.org_name || `组织${p.org_id}`,
+          total: expected,
+          present,
+          absent: Math.max(0, expected - present),
+          rate: expected > 0 ? Math.round((present / expected) * 100) : 0,
+        }
+      })
     : []
   const totalPresent = board?.total ?? 0
-  const totalWorkers = board?.total ?? 0
+  const totalExpected = board?.total_expected ?? 0
+  const totalAbsent = Math.max(0, totalExpected - totalPresent)
+  const overallRate = totalExpected > 0 ? ((totalPresent / totalExpected) * 100).toFixed(1) : "0"
 
   return (
     <div className="space-y-6">
@@ -150,8 +158,8 @@ export default function RealtimePage() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">总人数</p>
-                <p className="text-3xl font-bold">{totalWorkers.toLocaleString()}</p>
+                <p className="text-sm text-muted-foreground">应在岗</p>
+                <p className="text-3xl font-bold">{totalExpected.toLocaleString()}</p>
               </div>
               <Building2 className="h-10 w-10 text-muted-foreground/50" />
             </div>
@@ -163,7 +171,7 @@ export default function RealtimePage() {
               <div>
                 <p className="text-sm text-muted-foreground">平均在岗率</p>
                 <p className="text-3xl font-bold text-green-500">
-                  {totalWorkers > 0 ? ((totalPresent / totalWorkers) * 100).toFixed(1) : 0}%
+                  {overallRate}%
                 </p>
               </div>
               <CheckCircle2 className="h-10 w-10 text-green-500/50" />
@@ -176,7 +184,7 @@ export default function RealtimePage() {
               <div>
                 <p className="text-sm text-muted-foreground">缺勤人数</p>
                 <p className="text-3xl font-bold text-destructive">
-                  {0}
+                  {totalAbsent}
                 </p>
               </div>
               <AlertCircle className="h-10 w-10 text-destructive/50" />

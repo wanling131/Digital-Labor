@@ -30,54 +30,76 @@ import {
 } from "recharts"
 import { api } from "@/lib/api"
 
-const statsPlaceholder = [
-  { month: "1月", 新增: 120, 签约: 45, 考勤: 2800 },
-  { month: "2月", 新增: 180, 签约: 62, 考勤: 2918 },
-  { month: "3月", 新增: 220, 签约: 78, 考勤: 3060 },
-  { month: "4月", 新增: 150, 签约: 55, 考勤: 3155 },
-  { month: "5月", 新增: 280, 签约: 92, 考勤: 3343 },
-  { month: "6月", 新增: 310, 签约: 110, 考勤: 3543 },
-  { month: "7月", 新增: 245, 签约: 88, 考勤: 3700 },
-  { month: "8月", 新增: 198, 签约: 56, 考勤: 3842 },
-]
-
-const recentActivities = [
-  { type: "入职", name: "李明", project: "项目A-主体工程", time: "10分钟前" },
-  { type: "签约", name: "王建国", project: "项目B-装修工程", time: "25分钟前" },
-  { type: "离场", name: "张伟", project: "项目C-基建工程", time: "1小时前" },
-  { type: "认证", name: "刘洋", project: "项目A-主体工程", time: "2小时前" },
-  { type: "入职", name: "陈刚", project: "项目D-市政工程", time: "3小时前" },
-]
-
-const alerts = [
-  { level: "warning", message: "32份合同即将到期，请及时处理", count: 32 },
-  { level: "info", message: "本月有156人待实名认证", count: 156 },
-  { level: "error", message: "5人黑名单预警匹配", count: 5 },
-]
+type TrendItem = { date: string; personCount: number; signedCount: number; attendanceCount: number; totalHours: number }
+type BoardData = {
+  total?: number
+  realNameRate?: string
+  signRate?: string
+  onSiteRate?: string
+  totalChangePercent?: string
+  realNameRateChange?: string
+  signRateChange?: string
+  onSiteRateChange?: string
+  pendingRealName?: number
+  contractExpiring?: number
+  blacklistMatch?: number
+  teamRank?: { name: string; count: number }[]
+  recentActivities?: { type: string; name: string; project: string; time: string }[]
+  todos?: { title: string; count: number; urgent: boolean }[]
+}
+type SiteBoardRes = { projects: { org_id: number; org_name: string; count: number }[]; total: number }
 
 export default function DashboardPage() {
-  const [board, setBoard] = useState<{ total?: number; realNameRate?: string; signRate?: string; onSiteRate?: string } | null>(null)
-  const [trend, setTrend] = useState<{ date: string; personCount: number; signedCount: number; attendanceCount: number; totalHours: number }[]>([])
+  const [board, setBoard] = useState<BoardData | null>(null)
+  const [trend, setTrend] = useState<TrendItem[]>([])
+  const [siteBoard, setSiteBoard] = useState<SiteBoardRes | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     Promise.all([
-      api<{ total?: number; realNameRate?: string; signRate?: string; onSiteRate?: string }>("/api/data/board"),
-      api<{ trend?: { date: string; personCount: number; signedCount: number; attendanceCount: number; totalHours: number }[] }>("/api/data/board/trend", { query: { days: 30 } }),
+      api<BoardData>("/api/data/board"),
+      api<{ trend?: TrendItem[] }>("/api/data/board/trend", { query: { days: 30 } }),
+      api<SiteBoardRes>("/api/site/board"),
     ])
-      .then(([b, t]) => {
+      .then(([b, t, s]) => {
         setBoard(b)
-        setTrend(t.trend || [])
+        setTrend(t.trend ?? [])
+        setSiteBoard(s)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
 
+  const totalChange = board?.totalChangePercent ?? "0"
+  const realNameChange = board?.realNameRateChange ?? "0"
+  const signChange = board?.signRateChange ?? "0"
+  const onSiteChange = board?.onSiteRateChange ?? "0"
   const stats = [
-    { title: "总人数", value: loading ? "—" : (board?.total ?? 0).toLocaleString(), change: "+12.5%", trend: "up" as const, icon: Users, color: "bg-primary/10 text-primary" },
-    { title: "实名认证率", value: loading ? "—" : `${board?.realNameRate ?? 0}%`, change: "+2.3%", trend: "up" as const, icon: UserCheck, color: "bg-accent/10 text-accent" },
-    { title: "合同签约率", value: loading ? "—" : `${board?.signRate ?? 0}%`, change: "+5.1%", trend: "up" as const, icon: FileCheck, color: "bg-chart-3/10 text-chart-3" },
-    { title: "今日在岗率", value: loading ? "—" : `${board?.onSiteRate ?? 0}%`, change: "-1.2%", trend: "down" as const, icon: Clock, color: "bg-chart-5/10 text-chart-5" },
+    { title: "总人数", value: loading ? "—" : (board?.total ?? 0).toLocaleString(), change: `${Number(totalChange) >= 0 ? "+" : ""}${totalChange}%`, trend: (Number(totalChange) >= 0 ? "up" : "down") as const, icon: Users, color: "bg-primary/10 text-primary" },
+    { title: "实名认证率", value: loading ? "—" : `${board?.realNameRate ?? 0}%`, change: `${Number(realNameChange) >= 0 ? "+" : ""}${realNameChange}%`, trend: (Number(realNameChange) >= 0 ? "up" : "down") as const, icon: UserCheck, color: "bg-accent/10 text-accent" },
+    { title: "合同签约率", value: loading ? "—" : `${board?.signRate ?? 0}%`, change: `${Number(signChange) >= 0 ? "+" : ""}${signChange}%`, trend: (Number(signChange) >= 0 ? "up" : "down") as const, icon: FileCheck, color: "bg-chart-3/10 text-chart-3" },
+    { title: "今日在岗率", value: loading ? "—" : `${board?.onSiteRate ?? 0}%`, change: `${Number(onSiteChange) >= 0 ? "+" : ""}${onSiteChange}%`, trend: (Number(onSiteChange) >= 0 ? "up" : "down") as const, icon: Clock, color: "bg-chart-5/10 text-chart-5" },
+  ]
+
+  const alerts = [
+    {
+      level: "warning" as const,
+      message: `${board?.contractExpiring ?? 0}份合同即将到期，请及时处理`,
+      count: board?.contractExpiring ?? 0,
+      key: "contract",
+    },
+    {
+      level: "info" as const,
+      message: `本月有${board?.pendingRealName ?? 0}人待实名认证`,
+      count: board?.pendingRealName ?? 0,
+      key: "realname",
+    },
+    {
+      level: "error" as const,
+      message: `${board?.blacklistMatch ?? 0}人黑名单预警匹配`,
+      count: board?.blacklistMatch ?? 0,
+      key: "blacklist",
+    },
   ]
 
   const trendData =
@@ -88,16 +110,17 @@ export default function DashboardPage() {
           签约: t.signedCount,
           考勤: t.attendanceCount,
         }))
-      : statsPlaceholder
+      : []
 
-  const projectData = [
-    { name: "项目A-主体工程", value: 856, percentage: 22.3 },
-    { name: "项目B-装修工程", value: 642, percentage: 16.7 },
-    { name: "项目C-基建工程", value: 534, percentage: 13.9 },
-    { name: "项目D-市政工程", value: 489, percentage: 12.7 },
-    { name: "项目E-园林工程", value: 421, percentage: 11.0 },
-    { name: "其他项目", value: 900, percentage: 23.4 },
-  ]
+  const projectTotal = siteBoard?.total ?? 0
+  const projectData = (siteBoard?.projects ?? []).map((p) => ({
+    name: p.org_name || "未分配",
+    value: p.count,
+    percentage: projectTotal ? ((p.count / projectTotal) * 100).toFixed(1) : "0",
+  }))
+  const teamRankData = board?.teamRank ?? []
+  const recentActivitiesList = board?.recentActivities ?? []
+  const todosList = board?.todos ?? []
 
   const COLORS = [
     "oklch(0.55 0.18 250)",
@@ -128,9 +151,9 @@ export default function DashboardPage() {
 
       {/* 告警提示 */}
       <div className="grid gap-3 md:grid-cols-3">
-        {alerts.map((alert, index) => (
+        {alerts.map((alert) => (
           <Card
-            key={index}
+            key={alert.key}
             className={`border-l-4 ${
               alert.level === "error"
                 ? "border-l-destructive bg-destructive/5"
@@ -198,7 +221,7 @@ export default function DashboardPage() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>人员变动趋势</CardTitle>
-            <CardDescription>近8个月人员入职、离职及在岗人数统计</CardDescription>
+            <CardDescription>近30天每日新增人员、签约数与考勤人次统计</CardDescription>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
@@ -279,6 +302,9 @@ export default function DashboardPage() {
                 <Legend />
               </PieChart>
             </ResponsiveContainer>
+            {projectData.length === 0 && (
+              <p className="text-center text-sm text-muted-foreground py-8">暂无在岗人员分布数据</p>
+            )}
           </CardContent>
         </Card>
 
@@ -291,14 +317,7 @@ export default function DashboardPage() {
           <CardContent>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart
-                data={[
-                  { name: "钢筋班组", count: 245 },
-                  { name: "木工班组", count: 198 },
-                  { name: "混凝土班组", count: 176 },
-                  { name: "架子班组", count: 156 },
-                  { name: "水电班组", count: 134 },
-                  { name: "抹灰班组", count: 112 },
-                ]}
+                data={teamRankData}
                 layout="vertical"
                 margin={{ left: 20 }}
               >
@@ -315,6 +334,9 @@ export default function DashboardPage() {
                 <Bar dataKey="count" fill="oklch(0.55 0.18 250)" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
+            {teamRankData.length === 0 && (
+              <p className="text-center text-sm text-muted-foreground py-8">暂无班组在岗数据</p>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -329,7 +351,10 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {recentActivities.map((activity, index) => (
+              {recentActivitiesList.length === 0 && (
+                <p className="text-sm text-muted-foreground py-4">暂无动态</p>
+              )}
+              {recentActivitiesList.map((activity, index) => (
                 <div key={index} className="flex items-center gap-4">
                   <div
                     className={`flex h-10 w-10 items-center justify-center rounded-full ${
@@ -374,26 +399,21 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {[
-                { title: "待审批合同", count: 28, urgent: true },
-                { title: "待确认结算单", count: 15, urgent: true },
-                { title: "待认证人员", count: 156, urgent: false },
-                { title: "即将到期合同", count: 32, urgent: false },
-                { title: "考勤异常待处理", count: 8, urgent: true },
-              ].map((item, index) => (
+              {todosList.map((item, index) => (
                 <div
                   key={index}
                   className="flex items-center justify-between rounded-lg border border-border p-3 hover:bg-muted/50 cursor-pointer transition-colors"
                 >
                   <div className="flex items-center gap-3">
-                    {item.urgent && (
-                      <span className="h-2 w-2 rounded-full bg-destructive animate-pulse" />
-                    )}
+                    <span className="h-2 w-2 rounded-full bg-destructive animate-pulse" />
                     <span className="text-sm font-medium">{item.title}</span>
                   </div>
-                  <Badge variant={item.urgent ? "destructive" : "secondary"}>{item.count}</Badge>
+                  <Badge variant="destructive">{item.count}</Badge>
                 </div>
               ))}
+              {todosList.length === 0 && (
+                <p className="text-sm text-muted-foreground py-4">暂无待办</p>
+              )}
             </div>
           </CardContent>
         </Card>
