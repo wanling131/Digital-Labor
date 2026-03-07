@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,13 +15,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,80 +32,103 @@ import {
   Trash2,
   Clock,
   CheckCircle,
+  Loader2,
 } from "lucide-react"
+import { api, getToken } from "@/lib/api"
 
-const templates = [
-  {
-    id: "TPL001",
-    name: "劳动合同-标准版",
-    type: "labor",
-    version: "v2.3",
-    status: "active",
-    createTime: "2024-01-15",
-    updateTime: "2024-02-20",
-    usageCount: 1256,
-  },
-  {
-    id: "TPL002",
-    name: "劳务派遣合同",
-    type: "dispatch",
-    version: "v1.5",
-    status: "active",
-    createTime: "2024-01-20",
-    updateTime: "2024-03-01",
-    usageCount: 856,
-  },
-  {
-    id: "TPL003",
-    name: "临时用工协议",
-    type: "temporary",
-    version: "v1.2",
-    status: "active",
-    createTime: "2024-02-01",
-    updateTime: "2024-02-15",
-    usageCount: 432,
-  },
-  {
-    id: "TPL004",
-    name: "安全责任书",
-    type: "safety",
-    version: "v3.0",
-    status: "active",
-    createTime: "2023-12-01",
-    updateTime: "2024-01-10",
-    usageCount: 2100,
-  },
-  {
-    id: "TPL005",
-    name: "保密协议",
-    type: "nda",
-    version: "v1.0",
-    status: "draft",
-    createTime: "2024-03-01",
-    updateTime: "2024-03-01",
-    usageCount: 0,
-  },
-]
-
-const typeLabels: Record<string, string> = {
-  labor: "劳动合同",
-  dispatch: "派遣合同",
-  temporary: "临时协议",
-  safety: "安全责任书",
-  nda: "保密协议",
+type TemplateItem = {
+  id: number
+  name: string
+  file_path: string | null
+  version: number
+  created_at: string
 }
 
 export default function ContractTemplatePage() {
+  const [list, setList] = useState<TemplateItem[]>([])
+  const [loading, setLoading] = useState(true)
   const [isUploadOpen, setIsUploadOpen] = useState(false)
+  const [uploadName, setUploadName] = useState("")
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [previewingId, setPreviewingId] = useState<number | null>(null)
+
+  const handlePreview = async (t: TemplateItem) => {
+    if (!t.file_path) return
+    const token = getToken()
+    const url = `/api/contract/template/${t.id}/file`
+    setPreviewingId(t.id)
+    try {
+      const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error((data as { message?: string }).message || "预览失败")
+      }
+      const blob = await res.blob()
+      const u = URL.createObjectURL(blob)
+      window.open(u, "_blank")
+      setTimeout(() => URL.revokeObjectURL(u), 60000)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "预览失败")
+    } finally {
+      setPreviewingId(null)
+    }
+  }
+
+  const loadList = () => {
+    setLoading(true)
+    api<{ list: TemplateItem[] }>("/api/contract/template")
+      .then((res) => setList(res.list || []))
+      .catch(() => setList([]))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    loadList()
+  }, [])
+
+  const handleUpload = async () => {
+    if (!uploadName.trim()) {
+      setUploadError("请输入模板名称")
+      return
+    }
+    setUploading(true)
+    setUploadError(null)
+    try {
+      if (uploadFile) {
+        const form = new FormData()
+        form.append("name", uploadName.trim())
+        form.append("file", uploadFile)
+        await api("/api/contract/template/upload", {
+          method: "POST",
+          body: form,
+        })
+      } else {
+        await api("/api/contract/template", {
+          method: "POST",
+          body: { name: uploadName.trim() },
+        })
+      }
+      setIsUploadOpen(false)
+      setUploadName("")
+      setUploadFile(null)
+      loadList()
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : "上传失败")
+    } finally {
+      setUploading(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">合同模板</h1>
-          <p className="text-muted-foreground">管理合同模板，支持版本控制</p>
+          <p className="text-muted-foreground">管理合同模板，支持版本控制；可视化编辑对接电子签后开放</p>
         </div>
-        <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
+        <Dialog open={isUploadOpen} onOpenChange={(open) => { setIsUploadOpen(open); if (!open) setUploadError(null) }}>
           <DialogTrigger asChild>
             <Button className="gap-2">
               <Plus className="h-4 w-4" />
@@ -122,59 +138,49 @@ export default function ContractTemplatePage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>上传合同模板</DialogTitle>
-              <DialogDescription>支持PDF、Word格式的合同模板文件</DialogDescription>
+              <DialogDescription>支持上传文件或仅填写名称（后续可补传）</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
+              {uploadError && <p className="text-sm text-destructive">{uploadError}</p>}
               <div className="space-y-2">
                 <Label>模板名称</Label>
-                <Input placeholder="请输入模板名称" />
+                <Input placeholder="请输入模板名称" value={uploadName} onChange={(e) => setUploadName(e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>模板类型</Label>
-                <Select>
-                  <SelectTrigger>
-                    <SelectValue placeholder="选择类型" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="labor">劳动合同</SelectItem>
-                    <SelectItem value="dispatch">派遣合同</SelectItem>
-                    <SelectItem value="temporary">临时协议</SelectItem>
-                    <SelectItem value="safety">安全责任书</SelectItem>
-                    <SelectItem value="nda">保密协议</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>上传文件</Label>
-                <div className="flex h-32 cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-border hover:border-primary hover:bg-primary/5 transition-colors">
-                  <div className="text-center">
+                <Label>上传文件（可选）</Label>
+                <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-border p-6">
+                  <input
+                    type="file"
+                    className="hidden"
+                    id="template-file"
+                    accept=".pdf,.doc,.docx"
+                    onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+                  />
+                  <label htmlFor="template-file" className="cursor-pointer text-center">
                     <Upload className="mx-auto h-8 w-8 text-muted-foreground" />
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      点击或拖拽文件到此处上传
-                    </p>
-                    <p className="text-xs text-muted-foreground">支持 PDF、DOC、DOCX 格式</p>
-                  </div>
+                    <p className="mt-2 text-sm text-muted-foreground">{uploadFile ? uploadFile.name : "点击选择 PDF、DOC、DOCX"}</p>
+                  </label>
                 </div>
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsUploadOpen(false)}>
-                取消
+              <Button variant="outline" onClick={() => setIsUploadOpen(false)}>取消</Button>
+              <Button onClick={handleUpload} disabled={uploading}>
+                {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                确认
               </Button>
-              <Button onClick={() => setIsUploadOpen(false)}>确认上传</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
 
-      {/* 模板统计 */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">模板总数</p>
-                <p className="text-2xl font-bold">{templates.length}</p>
+                <p className="text-2xl font-bold">{list.length}</p>
               </div>
               <div className="rounded-full bg-primary/10 p-3">
                 <FileText className="h-5 w-5 text-primary" />
@@ -186,10 +192,8 @@ export default function ContractTemplatePage() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">启用中</p>
-                <p className="text-2xl font-bold">
-                  {templates.filter((t) => t.status === "active").length}
-                </p>
+                <p className="text-sm font-medium text-muted-foreground">已上传文件</p>
+                <p className="text-2xl font-bold">{list.filter((t) => t.file_path).length}</p>
               </div>
               <div className="rounded-full bg-accent/10 p-3">
                 <CheckCircle className="h-5 w-5 text-accent" />
@@ -201,102 +205,81 @@ export default function ContractTemplatePage() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">草稿</p>
-                <p className="text-2xl font-bold">
-                  {templates.filter((t) => t.status === "draft").length}
-                </p>
+                <p className="text-sm font-medium text-muted-foreground">可视化编辑</p>
+                <p className="text-xs text-muted-foreground">对接后开放</p>
               </div>
               <div className="rounded-full bg-muted p-3">
-                <Clock className="h-5 w-5 text-muted-foreground" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">本月使用</p>
-                <p className="text-2xl font-bold">328</p>
-              </div>
-              <div className="rounded-full bg-chart-5/10 p-3">
-                <FileText className="h-5 w-5 text-chart-5" />
+                <Edit className="h-5 w-5 text-muted-foreground" />
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* 模板列表 */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {templates.map((template) => (
-          <Card key={template.id} className="group hover:border-primary transition-colors">
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
-                    <FileText className="h-6 w-6 text-primary" />
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {list.map((t) => (
+            <Card key={t.id} className="group hover:border-primary transition-colors">
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
+                      <FileText className="h-6 w-6 text-primary" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-base">{t.name}</CardTitle>
+                      <CardDescription className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-xs">v{t.version}</Badge>
+                        {t.file_path ? <span className="text-xs text-accent">已上传</span> : <span className="text-xs text-muted-foreground">未上传</span>}
+                      </CardDescription>
+                    </div>
                   </div>
-                  <div>
-                    <CardTitle className="text-base">{template.name}</CardTitle>
-                    <CardDescription className="flex items-center gap-2">
-                      <Badge variant="outline" className="text-xs">
-                        {typeLabels[template.type]}
-                      </Badge>
-                      <span className="text-xs">{template.version}</span>
-                    </CardDescription>
-                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100">
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        className="gap-2"
+                        disabled={!t.file_path || previewingId === t.id}
+                        onClick={() => t.file_path && handlePreview(t)}
+                      >
+                        {previewingId === t.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+                        {t.file_path ? "预览" : "预览（需先上传文件）"}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className="gap-2" disabled>
+                        <Edit className="h-4 w-4" />
+                        可视化编辑（占位，后续实现）
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className="gap-2" disabled>
+                        <Copy className="h-4 w-4" />
+                        复制
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className="gap-2 text-destructive" disabled>
+                        <Trash2 className="h-4 w-4" />
+                        删除
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100">
-                      <MoreVertical className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem className="gap-2">
-                      <Eye className="h-4 w-4" />
-                      预览
-                    </DropdownMenuItem>
-                    <DropdownMenuItem className="gap-2">
-                      <Edit className="h-4 w-4" />
-                      编辑
-                    </DropdownMenuItem>
-                    <DropdownMenuItem className="gap-2">
-                      <Copy className="h-4 w-4" />
-                      复制
-                    </DropdownMenuItem>
-                    <DropdownMenuItem className="gap-2 text-destructive">
-                      <Trash2 className="h-4 w-4" />
-                      删除
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">使用次数</span>
-                  <span className="font-medium">{template.usageCount.toLocaleString()}</span>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between text-sm text-muted-foreground">
+                  <span>创建时间</span>
+                  <span>{t.created_at}</span>
                 </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">状态</span>
-                  <Badge
-                    variant={template.status === "active" ? "default" : "secondary"}
-                  >
-                    {template.status === "active" ? "启用中" : "草稿"}
-                  </Badge>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">更新时间</span>
-                  <span>{template.updateTime}</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+      {!loading && list.length === 0 && <p className="py-8 text-center text-muted-foreground">暂无模板，请上传</p>}
     </div>
   )
 }

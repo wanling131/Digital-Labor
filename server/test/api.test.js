@@ -24,7 +24,7 @@ test('GET /api/sys/org 无 token 返回 401', async () => {
 
 // 用例3：管理端登录成功返回 token
 test('POST /api/auth/login 正确账号密码返回 token', async () => {
-  const res = await request.post('/api/auth/login').send({ username: 'admin', password: 'admin123' })
+  const res = await request.post('/api/auth/login').send({ username: 'admin', password: '123456' })
   assert.strictEqual(res.status, 200)
   assert.ok(res.body?.token)
   assert.ok(res.body?.user?.username === 'admin')
@@ -44,7 +44,7 @@ test('POST /api/auth/login 空用户名返回 400', async () => {
 
 // 用例5：带 token 可访问组织列表
 test('带 token 可 GET /api/sys/org', async () => {
-  const login = await request.post('/api/auth/login').send({ username: 'admin', password: 'admin123' })
+  const login = await request.post('/api/auth/login').send({ username: 'admin', password: '123456' })
   const token = login.body.token
   const res = await request.get('/api/sys/org').set('Authorization', `Bearer ${token}`)
   assert.strictEqual(res.status, 200)
@@ -53,7 +53,7 @@ test('带 token 可 GET /api/sys/org', async () => {
 
 // 用例6：人员档案列表带 token 返回 list 与 total
 test('带 token 可 GET /api/person/archive', async () => {
-  const login = await request.post('/api/auth/login').send({ username: 'admin', password: 'admin123' })
+  const login = await request.post('/api/auth/login').send({ username: 'admin', password: '123456' })
   const res = await request.get('/api/person/archive').set('Authorization', `Bearer ${login.body.token}`)
   assert.strictEqual(res.status, 200)
   assert.ok(Array.isArray(res.body?.list))
@@ -62,7 +62,7 @@ test('带 token 可 GET /api/person/archive', async () => {
 
 // 用例7：数据看板返回 KPI 字段
 test('带 token 可 GET /api/data/board', async () => {
-  const login = await request.post('/api/auth/login').send({ username: 'admin', password: 'admin123' })
+  const login = await request.post('/api/auth/login').send({ username: 'admin', password: '123456' })
   const res = await request.get('/api/data/board').set('Authorization', `Bearer ${login.body.token}`)
   assert.strictEqual(res.status, 200)
   assert.ok(typeof res.body?.total === 'number')
@@ -77,7 +77,7 @@ test('POST /api/auth/worker-login 无匹配人员返回 401', async () => {
 
 // 用例9：新增组织后树中包含
 test('POST /api/sys/org 新增后 GET 树中包含', async () => {
-  const login = await request.post('/api/auth/login').send({ username: 'admin', password: 'admin123' })
+  const login = await request.post('/api/auth/login').send({ username: 'admin', password: '123456' })
   const token = login.body.token
   const create = await request.post('/api/sys/org').set('Authorization', `Bearer ${token}`).send({ name: '测试_' + Date.now(), type: 'project' })
   assert.strictEqual(create.status, 200)
@@ -86,7 +86,7 @@ test('POST /api/sys/org 新增后 GET 树中包含', async () => {
 
 // 用例10：在岗看板返回 projects 与 total
 test('带 token 可 GET /api/site/board', async () => {
-  const login = await request.post('/api/auth/login').send({ username: 'admin', password: 'admin123' })
+  const login = await request.post('/api/auth/login').send({ username: 'admin', password: '123456' })
   const res = await request.get('/api/site/board').set('Authorization', `Bearer ${login.body.token}`)
   assert.strictEqual(res.status, 200)
   assert.ok(Array.isArray(res.body?.projects))
@@ -95,7 +95,7 @@ test('带 token 可 GET /api/site/board', async () => {
 
 // 用例11：新增人员后工人端可用姓名登录
 test('新增人员后 worker-login 返回 token', async () => {
-  const login = await request.post('/api/auth/login').send({ username: 'admin', password: 'admin123' })
+  const login = await request.post('/api/auth/login').send({ username: 'admin', password: '123456' })
   const token = login.body.token
   const create = await request.post('/api/person/archive').set('Authorization', `Bearer ${token}`).send({ name: 'WorkerTest', work_no: 'WT1' })
   assert.strictEqual(create.status, 200)
@@ -114,7 +114,7 @@ test('GET /api 返回 name 与 docs', async () => {
 
 // 用例13：带 token 可 GET /api/sys/my-menu 返回菜单
 test('带 token 可 GET /api/sys/my-menu', async () => {
-  const login = await request.post('/api/auth/login').send({ username: 'admin', password: 'admin123' })
+  const login = await request.post('/api/auth/login').send({ username: 'admin', password: '123456' })
   const res = await request.get('/api/sys/my-menu').set('Authorization', `Bearer ${login.body.token}`)
   assert.strictEqual(res.status, 200)
   assert.ok(Array.isArray(res.body?.menus))
@@ -131,7 +131,7 @@ test('POST /api/auth/login 400 返回统一错误格式', async () => {
 
 // 用例15：POST /api/settlement/push-notify 需 token，空 body 可成功
 test('POST /api/settlement/push-notify 带 token 可成功', async () => {
-  const login = await request.post('/api/auth/login').send({ username: 'admin', password: 'admin123' })
+  const login = await request.post('/api/auth/login').send({ username: 'admin', password: '123456' })
   const res = await request.post('/api/settlement/push-notify').set('Authorization', `Bearer ${login.body.token}`).send({})
   assert.strictEqual(res.status, 200)
   assert.strictEqual(res.body?.ok, true)

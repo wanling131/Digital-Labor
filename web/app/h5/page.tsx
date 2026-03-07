@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -22,6 +23,7 @@ import {
   RefreshCw,
 } from "lucide-react"
 import Link from "next/link"
+import { getWorkerToken, apiWorker } from "@/lib/api"
 
 const quickActions = [
   { icon: Clock, label: "考勤打卡", href: "/h5/attendance", color: "bg-primary" },
@@ -30,23 +32,68 @@ const quickActions = [
   { icon: Bell, label: "消息通知", href: "/h5/notifications", color: "bg-chart-4" },
 ]
 
-const notifications = [
-  { id: 1, type: "contract", title: "新合同待签署", desc: "2024年劳动合同", time: "10分钟前", unread: true },
-  { id: 2, type: "salary", title: "工资已发放", desc: "3月份工资￥8,500", time: "1小时前", unread: true },
-  { id: 3, type: "attendance", title: "考勤提醒", desc: "今日尚未打卡", time: "今天 08:00", unread: false },
-]
+interface NotifItem {
+  id: number
+  type: string
+  title: string
+  body?: string
+  created_at?: string
+  read_at?: string | null
+}
 
 export default function H5HomePage() {
+  const router = useRouter()
   const [currentTime, setCurrentTime] = useState(new Date())
-  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [isRefreshing, setRefreshing] = useState(false)
+  const [authChecked, setAuthChecked] = useState(false)
+  const [notifications, setNotifications] = useState<NotifItem[]>([])
+  const [workerName, setWorkerName] = useState<string>("")
+  const [orgName, setOrgName] = useState<string>("")
   const greeting = currentTime.getHours() < 12 ? "上午好" : currentTime.getHours() < 18 ? "下午好" : "晚上好"
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    if (!getWorkerToken()) {
+      router.replace("/h5/login")
+      return
+    }
+    setAuthChecked(true)
+  }, [router])
+
+  const loadData = useCallback(async () => {
+    if (!getWorkerToken()) return
+    try {
+      const [notifRes, meRes] = await Promise.all([
+        apiWorker<{ list: NotifItem[] }>("/api/notify/list", { query: { pageSize: 5 } }),
+        apiWorker<{ name?: string; org_name?: string }>("/api/worker/me"),
+      ])
+      setNotifications(notifRes.list || [])
+      setWorkerName(meRes.name ?? "")
+      setOrgName(meRes.org_name ?? "")
+    } catch {
+      setNotifications([])
+    }
+  }, [])
+
+  useEffect(() => {
+    if (authChecked) loadData()
+  }, [authChecked, loadData])
   
   const handleRefresh = useCallback(async () => {
-    setIsRefreshing(true)
-    await new Promise(resolve => setTimeout(resolve, 1000))
+    setRefreshing(true)
+    await loadData()
     setCurrentTime(new Date())
-    setIsRefreshing(false)
-  }, [])
+    await new Promise(resolve => setTimeout(resolve, 300))
+    setRefreshing(false)
+  }, [loadData])
+
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-muted/30">
+        <div className="animate-pulse text-muted-foreground">加载中...</div>
+      </div>
+    )
+  }
 
   return (
     <PullRefresh onRefresh={handleRefresh} className="pb-24 min-h-screen">
@@ -56,11 +103,11 @@ export default function H5HomePage() {
           <div className="flex items-center gap-3">
             <Avatar className="h-12 w-12 border-2 border-primary-foreground/20">
               <AvatarImage src="/placeholder-user.jpg" />
-              <AvatarFallback className="bg-primary-foreground/20 text-primary-foreground">张</AvatarFallback>
+              <AvatarFallback className="bg-primary-foreground/20 text-primary-foreground">{workerName ? workerName.slice(0, 1) : "工"}</AvatarFallback>
             </Avatar>
             <div>
               <p className="text-sm opacity-80">{greeting}</p>
-              <h1 className="text-lg font-semibold">张建国</h1>
+              <h1 className="text-lg font-semibold">{workerName || "工人"}</h1>
             </div>
           </div>
           <Link href="/h5/notifications">
@@ -76,7 +123,7 @@ export default function H5HomePage() {
           <CardContent className="p-4">
             <div className="flex items-center gap-2 text-primary-foreground/80 text-sm mb-2">
               <Building2 className="h-4 w-4" />
-              <span>华东分公司 - 上海项目部</span>
+              <span>{orgName || "—"}</span>
             </div>
             <div className="flex items-center gap-2 text-primary-foreground/80 text-sm mb-2">
               <Briefcase className="h-4 w-4" />
@@ -190,32 +237,46 @@ export default function H5HomePage() {
               </Link>
             </div>
             <div className="space-y-3">
-              {notifications.map((notification) => (
+              {notifications.map((notification) => {
+                const unread = !notification.read_at
+                const timeStr = notification.created_at
+                  ? (() => {
+                      const d = new Date(notification.created_at)
+                      const now = new Date()
+                      const diff = (now.getTime() - d.getTime()) / 60000
+                      if (diff < 60) return "刚刚"
+                      if (diff < 1440) return `${Math.floor(diff / 60)}分钟前`
+                      if (diff < 2880) return "昨天"
+                      return d.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" })
+                    })()
+                  : ""
+                return (
+                <Link key={notification.id} href="/h5/notifications">
                 <div
-                  key={notification.id}
                   className="flex items-start gap-3 p-3 bg-muted/30 rounded-lg active:bg-muted/50 transition-colors cursor-pointer relative"
                 >
-                  {notification.unread && (
+                  {unread && (
                     <span className="absolute top-3 right-3 h-2 w-2 bg-destructive rounded-full" />
                   )}
                   <div className={`h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                    notification.type === "contract" ? "bg-accent/20 text-accent" :
-                    notification.type === "salary" ? "bg-chart-5/20 text-chart-5" :
+                    notification.type === "合同待签" || notification.type === "contract" ? "bg-accent/20 text-accent" :
+                    notification.type === "工资发放" || notification.type === "salary" ? "bg-chart-5/20 text-chart-5" :
                     "bg-primary/20 text-primary"
                   }`}>
-                    {notification.type === "contract" && <FileText className="h-4 w-4" />}
-                    {notification.type === "salary" && <Wallet className="h-4 w-4" />}
-                    {notification.type === "attendance" && <Clock className="h-4 w-4" />}
+                    {(notification.type === "合同待签" || notification.type === "contract") && <FileText className="h-4 w-4" />}
+                    {(notification.type === "工资发放" || notification.type === "salary") && <Wallet className="h-4 w-4" />}
+                    {(notification.type === "考勤" || notification.type === "attendance" || notification.type === "结算待确认") && <Clock className="h-4 w-4" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between pr-4">
                       <p className="font-medium text-sm">{notification.title}</p>
-                      <span className="text-xs text-muted-foreground">{notification.time}</span>
+                      <span className="text-xs text-muted-foreground">{timeStr}</span>
                     </div>
-                    <p className="text-sm text-muted-foreground truncate">{notification.desc}</p>
+                    <p className="text-sm text-muted-foreground truncate">{notification.body || ""}</p>
                   </div>
                 </div>
-              ))}
+                </Link>
+              )})}
             </div>
           </CardContent>
         </Card>

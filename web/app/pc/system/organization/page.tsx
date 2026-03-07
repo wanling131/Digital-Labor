@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -40,6 +40,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { api } from "@/lib/api"
 
 interface OrgNode {
   id: string
@@ -51,90 +52,19 @@ interface OrgNode {
   expanded?: boolean
 }
 
-const mockOrgData: OrgNode[] = [
-  {
-    id: "1",
-    name: "建筑集团总公司",
-    type: "company",
-    manager: "张总",
-    memberCount: 1250,
+function mapApiTree(node: { id: number; name: string; type: string; manager?: string; memberCount: number; children?: unknown[] }): OrgNode {
+  return {
+    id: String(node.id),
+    name: node.name,
+    type: (node.type === "segment" ? "department" : node.type) as OrgNode["type"],
+    manager: node.manager ?? "",
+    memberCount: node.memberCount ?? 0,
     expanded: true,
-    children: [
-      {
-        id: "1-1",
-        name: "华东分公司",
-        type: "department",
-        manager: "李明",
-        memberCount: 450,
-        expanded: true,
-        children: [
-          {
-            id: "1-1-1",
-            name: "上海项目部",
-            type: "project",
-            manager: "王建",
-            memberCount: 120,
-            children: [
-              { id: "1-1-1-1", name: "土建班组", type: "team", manager: "赵强", memberCount: 35 },
-              { id: "1-1-1-2", name: "钢筋班组", type: "team", manager: "钱进", memberCount: 28 },
-              { id: "1-1-1-3", name: "木工班组", type: "team", manager: "孙伟", memberCount: 32 },
-            ],
-          },
-          {
-            id: "1-1-2",
-            name: "杭州项目部",
-            type: "project",
-            manager: "周华",
-            memberCount: 95,
-            children: [
-              { id: "1-1-2-1", name: "土建班组", type: "team", manager: "吴刚", memberCount: 30 },
-              { id: "1-1-2-2", name: "装修班组", type: "team", manager: "郑磊", memberCount: 25 },
-            ],
-          },
-        ],
-      },
-      {
-        id: "1-2",
-        name: "华北分公司",
-        type: "department",
-        manager: "陈刚",
-        memberCount: 380,
-        children: [
-          {
-            id: "1-2-1",
-            name: "北京项目部",
-            type: "project",
-            manager: "刘波",
-            memberCount: 150,
-          },
-          {
-            id: "1-2-2",
-            name: "天津项目部",
-            type: "project",
-            manager: "黄涛",
-            memberCount: 110,
-          },
-        ],
-      },
-      {
-        id: "1-3",
-        name: "华南分公司",
-        type: "department",
-        manager: "林峰",
-        memberCount: 420,
-        children: [
-          {
-            id: "1-3-1",
-            name: "深圳项目部",
-            type: "project",
-            manager: "徐明",
-            memberCount: 180,
-          },
-        ],
-      },
-    ],
-  },
-]
+    children: Array.isArray(node.children) && node.children.length > 0
+      ? (node.children as typeof node[]).map(mapApiTree)
+      : undefined,
+  }
+}
 
 const typeConfig = {
   company: { label: "公司", color: "bg-primary text-primary-foreground" },
@@ -212,6 +142,35 @@ function OrgTreeNode({ node, level = 0 }: { node: OrgNode; level?: number }) {
 
 export default function OrganizationPage() {
   const [searchQuery, setSearchQuery] = useState("")
+  const [orgTree, setOrgTree] = useState<OrgNode[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const loadOrg = useCallback(async () => {
+    try {
+      const { tree } = await api<{ tree: unknown[] }>("/api/sys/org")
+      setOrgTree((tree || []).map((n: { id: number; name: string; type: string; manager?: string; memberCount: number; children?: unknown[] }) => mapApiTree(n)))
+    } catch {
+      setOrgTree([])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadOrg()
+  }, [loadOrg])
+
+  const stats = {
+    company: orgTree.reduce((acc, n) => acc + countByType(n, "company"), 0),
+    department: orgTree.reduce((acc, n) => acc + countByType(n, "department"), 0),
+    project: orgTree.reduce((acc, n) => acc + countByType(n, "project"), 0),
+    team: orgTree.reduce((acc, n) => acc + countByType(n, "team"), 0),
+  }
+  function countByType(node: OrgNode, type: string): number {
+    let c = node.type === type ? 1 : 0
+    ;(node.children || []).forEach((ch) => { c += countByType(ch, type) })
+    return c
+  }
 
   return (
     <div className="space-y-6">
@@ -285,18 +244,18 @@ export default function OrganizationPage() {
             <Building2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">1</div>
+            <div className="text-2xl font-bold">{stats.company}</div>
             <p className="text-xs text-muted-foreground">集团总部</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">分公司数</CardTitle>
+            <CardTitle className="text-sm font-medium">分公司/标段数</CardTitle>
             <FolderTree className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">3</div>
-            <p className="text-xs text-muted-foreground">华东、华北、华南</p>
+            <div className="text-2xl font-bold">{stats.department}</div>
+            <p className="text-xs text-muted-foreground">分公司或标段</p>
           </CardContent>
         </Card>
         <Card>
@@ -305,7 +264,7 @@ export default function OrganizationPage() {
             <Building2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">5</div>
+            <div className="text-2xl font-bold">{stats.project}</div>
             <p className="text-xs text-muted-foreground">在建项目</p>
           </CardContent>
         </Card>
@@ -315,7 +274,7 @@ export default function OrganizationPage() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">12</div>
+            <div className="text-2xl font-bold">{stats.team}</div>
             <p className="text-xs text-muted-foreground">施工班组</p>
           </CardContent>
         </Card>
@@ -341,9 +300,15 @@ export default function OrganizationPage() {
         </CardHeader>
         <CardContent>
           <div className="border rounded-lg p-2">
-            {mockOrgData.map((node) => (
-              <OrgTreeNode key={node.id} node={node} />
-            ))}
+            {loading ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">加载中...</p>
+            ) : orgTree.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">暂无组织数据，请先执行种子或创建组织</p>
+            ) : (
+              orgTree.map((node) => (
+                <OrgTreeNode key={node.id} node={node} />
+              ))
+            )}
           </div>
         </CardContent>
       </Card>

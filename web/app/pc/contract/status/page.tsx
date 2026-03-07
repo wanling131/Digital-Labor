@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -30,7 +30,6 @@ import {
 } from "@/components/ui/select"
 import {
   Search,
-  Filter,
   Eye,
   Download,
   FileCheck,
@@ -39,116 +38,107 @@ import {
   CheckCircle,
   XCircle,
   FileText,
+  Loader2,
 } from "lucide-react"
+import { api, downloadContractPdf } from "@/lib/api"
 
-const contractStatus = [
-  {
-    id: "CON001",
-    name: "张三",
-    idCard: "320102***********34",
-    template: "劳动合同-标准版",
-    project: "项目A-主体工程",
-    status: "signed",
-    signTime: "2024-03-01 14:32:15",
-    startDate: "2024-03-01",
-    endDate: "2025-02-28",
-    archiveId: "ARC20240301001",
-  },
-  {
-    id: "CON002",
-    name: "李四",
-    idCard: "320103***********78",
-    template: "劳动合同-标准版",
-    project: "项目A-主体工程",
-    status: "signed",
-    signTime: "2024-03-02 10:15:42",
-    startDate: "2024-03-02",
-    endDate: "2025-03-01",
-    archiveId: "ARC20240302002",
-  },
-  {
-    id: "CON003",
-    name: "王五",
-    idCard: "320104***********12",
-    template: "劳务派遣合同",
-    project: "项目B-装修工程",
-    status: "pending",
-    signTime: null,
-    startDate: "2024-03-05",
-    endDate: "2024-09-04",
-    archiveId: null,
-  },
-  {
-    id: "CON004",
-    name: "赵六",
-    idCard: "320105***********56",
-    template: "临时用工协议",
-    project: "项目B-装修工程",
-    status: "expired",
-    signTime: null,
-    startDate: "2024-02-20",
-    endDate: "2024-03-20",
-    archiveId: null,
-  },
-  {
-    id: "CON005",
-    name: "钱七",
-    idCard: "320106***********90",
-    template: "安全责任书",
-    project: "项目C-基建工程",
-    status: "rejected",
-    signTime: null,
-    startDate: "2024-03-01",
-    endDate: "2025-02-28",
-    archiveId: null,
-  },
-]
+type ContractItem = {
+  id: number
+  title: string
+  person_id: number
+  person_name: string
+  work_no: string | null
+  status: string
+  deadline: string | null
+  signed_at: string | null
+  pdf_path: string | null
+}
 
-const statusConfig = {
-  signed: { label: "已签署", color: "bg-accent/10 text-accent border-accent/20", icon: CheckCircle },
-  pending: { label: "待签署", color: "bg-warning/10 text-warning border-warning/20", icon: Clock },
-  expired: { label: "已逾期", color: "bg-destructive/10 text-destructive border-destructive/20", icon: AlertCircle },
-  rejected: { label: "已驳回", color: "bg-muted text-muted-foreground border-muted", icon: XCircle },
+const statusConfig: Record<string, { label: string; color: string; icon: typeof CheckCircle }> = {
+  已签署: { label: "已签署", color: "bg-accent/10 text-accent border-accent/20", icon: CheckCircle },
+  待签署: { label: "待签署", color: "bg-warning/10 text-warning border-warning/20", icon: Clock },
+  已作废: { label: "已作废", color: "bg-muted text-muted-foreground border-muted", icon: XCircle },
+}
+
+function isOverdue(deadline: string | null, status: string): boolean {
+  if (status !== "待签署" || !deadline) return false
+  return new Date(deadline) < new Date()
 }
 
 export default function ContractStatusPage() {
   const [searchTerm, setSearchTerm] = useState("")
-  const [selectedContract, setSelectedContract] = useState<typeof contractStatus[0] | null>(null)
+  const [statusFilter, setStatusFilter] = useState<string>("")
+  const [list, setList] = useState<ContractItem[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const [loading, setLoading] = useState(true)
+  const [selectedContract, setSelectedContract] = useState<ContractItem | null>(null)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
+  const [downloadingId, setDownloadingId] = useState<number | null>(null)
+  const [pdfMessage, setPdfMessage] = useState<string | null>(null)
 
-  const filteredContracts = contractStatus.filter(
-    (contract) =>
-      contract.name.includes(searchTerm) ||
-      contract.id.includes(searchTerm) ||
-      contract.project.includes(searchTerm)
+  useEffect(() => {
+    setLoading(true)
+    const params = new URLSearchParams()
+    if (statusFilter) params.set("status", statusFilter)
+    params.set("page", String(page))
+    params.set("pageSize", "20")
+    api<{ list: ContractItem[]; total: number }>(`/api/contract/status?${params}`)
+      .then((res) => {
+        setList(res.list || [])
+        setTotal(res.total || 0)
+      })
+      .catch(() => {
+        setList([])
+        setTotal(0)
+      })
+      .finally(() => setLoading(false))
+  }, [statusFilter, page])
+
+  const filteredList = list.filter(
+    (c) =>
+      !searchTerm ||
+      (c.person_name || "").includes(searchTerm) ||
+      (c.work_no || "").includes(searchTerm) ||
+      (c.title || "").includes(searchTerm)
   )
 
-  const getStatusBadge = (status: string) => {
-    const config = statusConfig[status as keyof typeof statusConfig]
+  const signedCount = list.filter((c) => c.status === "已签署").length
+  const pendingCount = list.filter((c) => c.status === "待签署").length
+  const overdueCount = list.filter((c) => isOverdue(c.deadline, c.status)).length
+  const signRate = list.length ? Math.round((signedCount / list.length) * 100) : 0
+
+  const getStatusBadge = (c: ContractItem) => {
+    const isOver = isOverdue(c.deadline, c.status)
+    const status = isOver ? "待签署" : c.status
+    const config = statusConfig[status] || statusConfig.待签署
     return (
       <Badge variant="outline" className={`gap-1 ${config.color}`}>
         <config.icon className="h-3 w-3" />
-        {config.label}
+        {isOver ? "即将逾期/已逾期" : config.label}
       </Badge>
     )
   }
 
-  // 计算统计数据
-  const signedCount = contractStatus.filter((c) => c.status === "signed").length
-  const pendingCount = contractStatus.filter((c) => c.status === "pending").length
-  const expiredCount = contractStatus.filter((c) => c.status === "expired").length
-  const signRate = Math.round((signedCount / contractStatus.length) * 100)
+  const handleDownloadPdf = async (id: number) => {
+    setDownloadingId(id)
+    setPdfMessage(null)
+    const result = await downloadContractPdf(String(id))
+    setDownloadingId(null)
+    if (!result.ok) setPdfMessage(result.message)
+  }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">签约状态</h1>
-          <p className="text-muted-foreground">实时查看合同签署进度</p>
-        </div>
+      <div>
+        <h1 className="text-2xl font-bold text-foreground">签约状态</h1>
+        <p className="text-muted-foreground">实时查看合同签署进度，已签署可下载 PDF</p>
       </div>
 
-      {/* 统计卡片 */}
+      {pdfMessage && (
+        <div className="rounded-md bg-destructive/10 text-destructive px-4 py-2 text-sm">{pdfMessage}</div>
+      )}
+
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardContent className="pt-6">
@@ -194,8 +184,8 @@ export default function ContractStatusPage() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">已逾期</p>
-                <p className="text-2xl font-bold">{expiredCount}</p>
+                <p className="text-sm font-medium text-muted-foreground">已逾期/即将逾期</p>
+                <p className="text-2xl font-bold">{overdueCount}</p>
               </div>
               <div className="rounded-full bg-destructive/10 p-3">
                 <AlertCircle className="h-5 w-5 text-destructive" />
@@ -205,180 +195,120 @@ export default function ContractStatusPage() {
         </Card>
       </div>
 
-      {/* 合同列表 */}
       <Card>
         <CardHeader>
           <CardTitle>合同签署列表</CardTitle>
-          <CardDescription>查看所有合同的签署状态</CardDescription>
+          <CardDescription>共 {total} 条，已签署可下载 PDF（对接电子签后存证）</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="mb-4 flex items-center gap-4">
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="搜索姓名、合同号、项目..."
+                placeholder="搜索姓名、工号、合同标题..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-9"
               />
             </div>
-            <Select>
+            <Select value={statusFilter || "all"} onValueChange={(v) => { setStatusFilter(v === "all" ? "" : v); setPage(1) }}>
               <SelectTrigger className="w-32">
-                <SelectValue placeholder="状态筛选" />
+                <SelectValue placeholder="状态" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">全部状态</SelectItem>
-                <SelectItem value="signed">已签署</SelectItem>
-                <SelectItem value="pending">待签署</SelectItem>
-                <SelectItem value="expired">已逾期</SelectItem>
-                <SelectItem value="rejected">已驳回</SelectItem>
+                <SelectItem value="all">全部</SelectItem>
+                <SelectItem value="已签署">已签署</SelectItem>
+                <SelectItem value="待签署">待签署</SelectItem>
+                <SelectItem value="已作废">已作废</SelectItem>
               </SelectContent>
             </Select>
-            <Button variant="outline" size="icon">
-              <Filter className="h-4 w-4" />
-            </Button>
           </div>
 
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>合同编号</TableHead>
-                <TableHead>签约人</TableHead>
-                <TableHead>身份证号</TableHead>
-                <TableHead>合同模板</TableHead>
-                <TableHead>所属项目</TableHead>
-                <TableHead>合同期限</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead>签署时间</TableHead>
-                <TableHead className="text-right">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredContracts.map((contract) => (
-                <TableRow key={contract.id}>
-                  <TableCell className="font-medium">{contract.id}</TableCell>
-                  <TableCell>{contract.name}</TableCell>
-                  <TableCell className="text-muted-foreground font-mono text-sm">
-                    {contract.idCard}
-                  </TableCell>
-                  <TableCell>{contract.template}</TableCell>
-                  <TableCell>{contract.project}</TableCell>
-                  <TableCell>
-                    <div className="text-sm">
-                      <p>{contract.startDate}</p>
-                      <p className="text-muted-foreground">至 {contract.endDate}</p>
-                    </div>
-                  </TableCell>
-                  <TableCell>{getStatusBadge(contract.status)}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {contract.signTime || "-"}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="gap-1"
-                        onClick={() => {
-                          setSelectedContract(contract)
-                          setIsDetailOpen(true)
-                        }}
-                      >
-                        <Eye className="h-4 w-4" />
-                        详情
-                      </Button>
-                      {contract.status === "signed" && (
-                        <Button variant="ghost" size="sm" className="gap-1">
-                          <Download className="h-4 w-4" />
-                          下载
-                        </Button>
-                      )}
-                    </div>
-                  </TableCell>
+          {loading ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>合同标题</TableHead>
+                  <TableHead>签约人</TableHead>
+                  <TableHead>工号</TableHead>
+                  <TableHead>截止日</TableHead>
+                  <TableHead>状态</TableHead>
+                  <TableHead>签署时间</TableHead>
+                  <TableHead className="text-right">操作</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {filteredList.map((c) => (
+                  <TableRow key={c.id}>
+                    <TableCell className="font-medium">{c.title}</TableCell>
+                    <TableCell>{c.person_name}</TableCell>
+                    <TableCell className="text-muted-foreground">{c.work_no || "—"}</TableCell>
+                    <TableCell className="text-muted-foreground">{c.deadline || "—"}</TableCell>
+                    <TableCell>{getStatusBadge(c)}</TableCell>
+                    <TableCell className="text-muted-foreground">{c.signed_at || "—"}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="sm" className="gap-1" onClick={() => { setSelectedContract(c); setIsDetailOpen(true) }}>
+                          <Eye className="h-4 w-4" />
+                          详情
+                        </Button>
+                        {c.status === "已签署" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="gap-1"
+                            disabled={downloadingId === c.id}
+                            onClick={() => handleDownloadPdf(c.id)}
+                          >
+                            {downloadingId === c.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                            下载
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+          {!loading && filteredList.length === 0 && <p className="py-8 text-center text-muted-foreground">暂无合同</p>}
+          {total > 20 && (
+            <div className="mt-4 flex justify-between">
+              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>上一页</Button>
+              <span className="text-sm text-muted-foreground">第 {page} 页，共 {total} 条</span>
+              <Button variant="outline" size="sm" disabled={page * 20 >= total} onClick={() => setPage((p) => p + 1)}>下一页</Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* 合同详情弹窗 */}
       <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>合同详情 - {selectedContract?.id}</DialogTitle>
-            <DialogDescription>查看合同签署信息及存证详情</DialogDescription>
+            <DialogTitle>{selectedContract?.title}</DialogTitle>
+            <DialogDescription>签署信息；对接电子签后可展示存证</DialogDescription>
           </DialogHeader>
           {selectedContract && (
-            <div className="space-y-6 py-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">签约人</p>
-                  <p className="text-sm">{selectedContract.name}</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">身份证号</p>
-                  <p className="text-sm font-mono">{selectedContract.idCard}</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">合同模板</p>
-                  <p className="text-sm">{selectedContract.template}</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">所属项目</p>
-                  <p className="text-sm">{selectedContract.project}</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">合同期限</p>
-                  <p className="text-sm">
-                    {selectedContract.startDate} 至 {selectedContract.endDate}
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">签署状态</p>
-                  {getStatusBadge(selectedContract.status)}
-                </div>
+            <div className="space-y-4 py-4">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div><p className="text-muted-foreground">签约人</p><p>{selectedContract.person_name}</p></div>
+                <div><p className="text-muted-foreground">工号</p><p>{selectedContract.work_no || "—"}</p></div>
+                <div><p className="text-muted-foreground">截止日</p><p>{selectedContract.deadline || "—"}</p></div>
+                <div><p className="text-muted-foreground">状态</p>{getStatusBadge(selectedContract)}</div>
+                <div><p className="text-muted-foreground">签署时间</p><p>{selectedContract.signed_at || "—"}</p></div>
               </div>
-
-              {selectedContract.status === "signed" && (
-                <>
-                  <div className="rounded-lg border border-border p-4">
-                    <p className="text-sm font-medium mb-3">存证信息</p>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <p className="text-muted-foreground">存证编号</p>
-                        <p className="font-mono">{selectedContract.archiveId}</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">签署时间</p>
-                        <p>{selectedContract.signTime}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex h-40 items-center justify-center rounded-lg border border-dashed border-border bg-muted/30">
-                    <div className="text-center">
-                      <FileText className="mx-auto h-10 w-10 text-muted-foreground" />
-                      <p className="mt-2 text-sm text-muted-foreground">合同PDF预览区域</p>
-                      <Button variant="outline" size="sm" className="mt-2 gap-1">
-                        <Download className="h-4 w-4" />
-                        下载合同
-                      </Button>
-                    </div>
-                  </div>
-                </>
+              {selectedContract.status === "已签署" && (
+                <p className="text-xs text-muted-foreground">存证信息：对接电子签后展示</p>
               )}
-
-              {selectedContract.status === "pending" && (
-                <div className="rounded-lg bg-warning/10 p-4">
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-5 w-5 text-warning" />
-                    <p className="text-sm font-medium">等待签署中</p>
-                  </div>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    已向签约人发送签署通知，请等待签署完成。
-                  </p>
-                </div>
+              {selectedContract.status === "已签署" && (
+                <Button variant="outline" className="w-full gap-2" disabled={downloadingId === selectedContract.id} onClick={() => handleDownloadPdf(selectedContract.id)}>
+                  {downloadingId === selectedContract.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                  下载合同 PDF
+                </Button>
               )}
             </div>
           )}

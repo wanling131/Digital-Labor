@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import Link from "next/link"
+import { useState, useCallback, useEffect } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -26,8 +27,8 @@ import {
   Camera,
   CheckCircle2,
 } from "lucide-react"
-import Link from "next/link"
 import { cn } from "@/lib/utils"
+import { apiWorker } from "@/lib/api"
 
 const menuItems = [
   {
@@ -77,6 +78,33 @@ const certifications = [
 
 export default function ProfilePage() {
   const [notificationEnabled, setNotificationEnabled] = useState(true)
+  const [workerId, setWorkerId] = useState<number | null>(null)
+  const [faceVerifying, setFaceVerifying] = useState(false)
+  const [faceResult, setFaceResult] = useState<"idle" | "success" | "fail">("idle")
+  const [me, setMe] = useState<{ name?: string; work_no?: string; org_name?: string; mobile?: string; status?: string; id_card?: string } | null>(null)
+
+  useEffect(() => {
+    apiWorker<{ id?: number; name?: string; work_no?: string; org_name?: string; mobile?: string; status?: string; id_card?: string }>("/api/worker/me")
+      .then((res) => {
+        setWorkerId(res.id ?? null)
+        setMe(res)
+      })
+      .catch(() => setMe(null))
+  }, [])
+
+  const handleFaceVerify = useCallback(async () => {
+    if (workerId == null) return
+    setFaceVerifying(true)
+    setFaceResult("idle")
+    try {
+      await apiWorker("/api/person/face-verify", { method: "POST", body: { person_id: workerId } })
+      setFaceResult("success")
+    } catch {
+      setFaceResult("fail")
+    } finally {
+      setFaceVerifying(false)
+    }
+  }, [workerId])
 
   const handleRefresh = useCallback(async () => {
     await new Promise(resolve => setTimeout(resolve, 1000))
@@ -104,7 +132,7 @@ export default function ProfilePage() {
               <div className="relative">
                 <Avatar className="h-20 w-20 border-4 border-card">
                   <AvatarImage src="/placeholder-user.jpg" />
-                  <AvatarFallback className="text-2xl">张</AvatarFallback>
+                  <AvatarFallback className="text-2xl">{me?.name ? me.name.slice(0, 1) : "工"}</AvatarFallback>
                 </Avatar>
                 <Button
                   size="icon"
@@ -115,21 +143,17 @@ export default function ProfilePage() {
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
-                  <h2 className="text-xl font-bold">张建国</h2>
+                  <h2 className="text-xl font-bold">{me?.name ?? "工人"}</h2>
                   <Badge className="bg-green-100 text-green-700">
                     <CheckCircle2 className="h-3 w-3 mr-1" />
-                    已实名
+                    {me?.status === "已实名" || me?.status === "已签约" || me?.status === "已进场" ? (me?.status ?? "已实名") : "预注册"}
                   </Badge>
                 </div>
-                <p className="text-sm text-muted-foreground mb-2">工号: HQ20240315</p>
+                <p className="text-sm text-muted-foreground mb-2">工号: {me?.work_no ?? "—"}</p>
                 <div className="flex items-center gap-4 text-sm text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Briefcase className="h-3.5 w-3.5" />
-                    木工
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Calendar className="h-3.5 w-3.5" />
-                    入职 2024.01
+                    {me?.org_name ?? "—"}
                   </span>
                 </div>
               </div>
@@ -139,23 +163,52 @@ export default function ProfilePage() {
             <div className="mt-6 space-y-3">
               <div className="flex items-center gap-3 text-sm">
                 <Phone className="h-4 w-4 text-muted-foreground" />
-                <span>138****8888</span>
-                <Badge variant="outline" className="ml-auto">已绑定</Badge>
+                <span>{me?.mobile ? me.mobile.replace(/(\d{3})\d{4}(\d{4})/, "$1****$2") : "—"}</span>
+                {me?.mobile && <Badge variant="outline" className="ml-auto">已绑定</Badge>}
               </div>
               <div className="flex items-center gap-3 text-sm">
                 <CreditCard className="h-4 w-4 text-muted-foreground" />
-                <span>320123********1234</span>
-                <Badge variant="outline" className="ml-auto">已认证</Badge>
+                <span>{me?.id_card ? me.id_card.slice(0, 6) + "********" + me.id_card.slice(-4) : "—"}</span>
+                {me?.id_card && <Badge variant="outline" className="ml-auto">已认证</Badge>}
               </div>
               <div className="flex items-center gap-3 text-sm">
                 <Building2 className="h-4 w-4 text-muted-foreground" />
-                <span>华东分公司 - 上海项目部</span>
+                <span>{me?.org_name ?? "—"}</span>
               </div>
               <div className="flex items-center gap-3 text-sm">
                 <MapPin className="h-4 w-4 text-muted-foreground" />
                 <span>上海市浦东新区张江高科技园区</span>
               </div>
             </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* 人脸实名认证（占位流程） */}
+      <div className="px-4 mt-4">
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-semibold flex items-center gap-2">
+                <Camera className="h-5 w-5 text-primary" />
+                人脸实名认证
+              </h3>
+              {faceResult === "success" && (
+                <Badge className="bg-green-100 text-green-700">
+                  <CheckCircle2 className="h-3 w-3 mr-1" />
+                  已通过
+                </Badge>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground mb-3">活体检测与人脸采集，对接第三方后可完成实名认证</p>
+            <Button
+              variant="outline"
+              className="w-full"
+              disabled={faceVerifying || workerId == null}
+              onClick={handleFaceVerify}
+            >
+              {faceVerifying ? "验证中..." : "开始人脸采集（占位）"}
+            </Button>
           </CardContent>
         </Card>
       </div>

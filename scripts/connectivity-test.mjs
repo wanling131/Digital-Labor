@@ -39,11 +39,11 @@ async function main() {
     const res = await fetch(`${API_BASE}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123' }),
+      body: JSON.stringify({ username: 'admin', password: '123456' }),
     })
     const data = await res.json()
     loginOk = res.ok && data?.token
-    console.log(loginOk ? '✓ 管理端登录 POST /api/auth/login' : '✗ 管理端登录 (账号 admin / admin123)')
+    console.log(loginOk ? '✓ 管理端登录 POST /api/auth/login' : '✗ 管理端登录 (账号 admin / 123456)')
   } catch (e) {
     console.log('✗ 管理端登录', e.message)
   }

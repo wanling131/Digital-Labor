@@ -77,8 +77,9 @@ router.post('/confirm/:id', (req, res) => {
   const updates = ['updated_at = datetime(\'now\')']
   const values = []
   if (action === 'confirm') {
+    const paid = amount_paid != null && parseFloat(amount_paid) > 0
     updates.push('status = ?')
-    values.push('已确认')
+    values.push(paid ? '已发放' : '已确认')
     if (amount_due != null) { updates.push('amount_due = ?'); values.push(parseFloat(amount_due)) }
     if (amount_paid != null) { updates.push('amount_paid = ?'); values.push(parseFloat(amount_paid)) }
   } else if (action === 'reject') {

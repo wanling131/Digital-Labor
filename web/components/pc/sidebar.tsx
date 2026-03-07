@@ -30,8 +30,9 @@ import {
   Building,
   Lock,
   ScrollText,
-  Menu,
+  Activity,
 } from "lucide-react"
+import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
@@ -46,12 +47,36 @@ interface MenuItem {
   }[]
 }
 
-const menuItems: MenuItem[] = [
-  {
-    title: "综合数据看板",
-    icon: LayoutDashboard,
-    href: "/pc/dashboard",
-  },
+const PATH_ICONS: Record<string, React.ElementType> = {
+  "/pc/dashboard": LayoutDashboard,
+  "/pc/personnel": Users,
+  "/pc/personnel/archive": UserCheck,
+  "/pc/personnel/certification": ShieldCheck,
+  "/pc/personnel/status": Users,
+  "/pc/contract": FileText,
+  "/pc/contract/template": FileSignature,
+  "/pc/contract/initiate": FilePlus,
+  "/pc/contract/status": FileCheck,
+  "/pc/contract/archive": Archive,
+  "/pc/attendance": Clock,
+  "/pc/attendance/import": CalendarDays,
+  "/pc/attendance/report": ClipboardList,
+  "/pc/settlement": CreditCard,
+  "/pc/settlement/generate": Wallet,
+  "/pc/settlement/analysis": PieChart,
+  "/pc/site": Building2,
+  "/pc/site/departure": LogOut,
+  "/pc/site/realtime": Monitor,
+  "/pc/system": Settings,
+  "/pc/system/users": UserCog,
+  "/pc/system/organization": Building,
+  "/pc/system/permissions": Lock,
+  "/pc/system/logs": ScrollText,
+  "/pc/monitor": Activity,
+}
+
+const defaultMenuItems: MenuItem[] = [
+  { title: "综合数据看板", icon: LayoutDashboard, href: "/pc/dashboard" },
   {
     title: "人员档案及实名中心",
     icon: Users,
@@ -105,13 +130,44 @@ const menuItems: MenuItem[] = [
       { title: "操作日志", href: "/pc/system/logs", icon: ScrollText },
     ],
   },
+  { title: "系统监控", icon: Activity, href: "/pc/monitor" },
 ]
+
+function apiMenuToItem(m: { path: string; label: string; children?: unknown[] }): MenuItem | null {
+  const icon = PATH_ICONS[m.path] ?? Settings
+  if (m.children && Array.isArray(m.children) && m.children.length > 0) {
+    const children = m.children
+      .map((c) => apiMenuToItem(c as { path: string; label: string; children?: unknown[] }))
+      .filter((c): c is MenuItem => c != null)
+      .map((c) => ({
+        title: c.title,
+        href: c.href!,
+        icon: c.icon,
+      }))
+    if (children.length === 0) return null
+    return { title: m.label, icon, children }
+  }
+  return { title: m.label, icon, href: m.path }
+}
 
 export function Sidebar() {
   const pathname = usePathname()
+  const [menusFromApi, setMenusFromApi] = useState<MenuItem[] | null>(null)
   const [isCollapsed, setIsCollapsed] = useState(false)
-  
-  // 根据当前路径自动展开对应的菜单组
+
+  useEffect(() => {
+    api<{ menus: { path: string; label: string; children?: unknown[] }[] }>("/api/sys/my-menu")
+      .then((data) => {
+        const items = (data.menus || [])
+          .map((m) => apiMenuToItem(m))
+          .filter((item): item is MenuItem => item != null)
+        setMenusFromApi(items.length > 0 ? items : defaultMenuItems)
+      })
+      .catch(() => setMenusFromApi(defaultMenuItems))
+  }, [])
+
+  const menuItems = menusFromApi ?? defaultMenuItems
+
   const initialExpandedItems = useMemo(() => {
     const expanded: string[] = []
     menuItems.forEach((item) => {
@@ -120,11 +176,10 @@ export function Sidebar() {
       }
     })
     return expanded.length > 0 ? expanded : ["综合数据看板"]
-  }, [pathname])
-  
+  }, [pathname, menuItems])
+
   const [expandedItems, setExpandedItems] = useState<string[]>(initialExpandedItems)
-  
-  // 路径变化时自动展开对应菜单
+
   useEffect(() => {
     menuItems.forEach((item) => {
       if (item.children?.some((child) => pathname.startsWith(child.href))) {
@@ -133,7 +188,7 @@ export function Sidebar() {
         }
       }
     })
-  }, [pathname])
+  }, [pathname, menuItems])
 
   const toggleExpand = (title: string) => {
     setExpandedItems((prev) =>

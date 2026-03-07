@@ -67,14 +67,14 @@ export default function HomePage() {
               专业的建筑劳务管理解决方案，涵盖人员档案、电子合同、考勤管理、智能结算等核心功能，助力企业高效管理
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link href="/pc/dashboard">
+              <Link href="/login">
                 <Button size="lg" variant="secondary" className="gap-2 w-full sm:w-auto">
                   <Monitor className="h-5 w-5" />
                   进入PC管理端
                   <ArrowRight className="h-4 w-4" />
                 </Button>
               </Link>
-              <Link href="/h5">
+              <Link href="/h5/login">
                 <Button size="lg" className="gap-2 w-full sm:w-auto bg-primary-foreground/20 text-primary-foreground border border-primary-foreground/30 hover:bg-primary-foreground/30">
                   <Smartphone className="h-5 w-5" />
                   进入移动端
@@ -122,7 +122,7 @@ export default function HomePage() {
                   薪资自动计算与报表生成
                 </li>
               </ul>
-              <Link href="/pc/dashboard">
+              <Link href="/login">
                 <Button className="w-full gap-2">
                   进入管理端
                   <ArrowRight className="h-4 w-4" />
@@ -164,7 +164,7 @@ export default function HomePage() {
                   消息通知实时推送
                 </li>
               </ul>
-              <Link href="/h5">
+              <Link href="/h5/login">
                 <Button variant="outline" className="w-full gap-2">
                   进入移动端
                   <ArrowRight className="h-4 w-4" />

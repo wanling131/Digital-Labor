@@ -77,8 +77,11 @@
 
 | 方法 | 路径 | 鉴权 | 说明 |
 |------|------|:----:|------|
-| GET | /api/sys/my-menu | 管理端 | 当前用户可见菜单，返回 `{ menus }`（树形 path/label/children） |
+| GET | /api/sys/my-menu | 管理端 | 当前用户可见菜单，返回 `{ menus }`（树形 path/label/children，与前端 /pc 路由一致） |
+| GET | /api/sys/all-menus | 管理端 | 全量菜单树，供权限配置页使用 `{ menus }` |
 | GET | /api/sys/role | 管理端 | 预定义角色列表 `{ list: [{ code, name, desc }] }` |
+| GET | /api/sys/role/:code/menus | 管理端 | 某角色的菜单 path 列表 `{ paths: string[] }` |
+| PUT | /api/sys/role/:code/menus | 管理端 | body `{ paths: string[] }`，保存该角色可见菜单 |
 
 ---
 
@@ -102,6 +105,7 @@
 | GET | /api/person/status | 管理端 | 各状态人数 `{ list: [{ status, count }] }` |
 | POST | /api/person/status/batch | 管理端 | body `{ ids: number[], status }`，批量改状态（含进场/离场时联动 on_site） |
 | GET | /api/person/auth | 管理端 | 认证相关占位，当前返回 `{ list: [] }` |
+| POST | /api/person/face-verify | 管理端/工人端 | body `{ image?, person_id? }`，人脸核验占位；对接第三方前返回 `{ ok: true }` |
 | GET | /api/person/:id | 管理端 | 单条人员（简略） |
 
 ---

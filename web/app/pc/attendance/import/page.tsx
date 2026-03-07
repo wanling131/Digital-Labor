@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -40,6 +40,7 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react"
+import { api } from "@/lib/api"
 
 const importHistory = [
   {
@@ -106,20 +107,47 @@ export default function AttendanceImportPage() {
   const [isUploadOpen, setIsUploadOpen] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [isUploading, setIsUploading] = useState(false)
+  const [uploadResult, setUploadResult] = useState<{ ok: boolean; count?: number; message?: string } | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
 
-  const handleUpload = () => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    setSelectedFile(f ?? null)
+    setUploadResult(null)
+    e.target.value = ""
+  }
+
+  const handleUpload = async () => {
+    if (!selectedFile) return
     setIsUploading(true)
-    setUploadProgress(0)
-    const interval = setInterval(() => {
-      setUploadProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval)
-          setIsUploading(false)
-          return 100
-        }
-        return prev + 10
+    setUploadProgress(20)
+    setUploadResult(null)
+    try {
+      const fd = new FormData()
+      fd.append("file", selectedFile)
+      setUploadProgress(50)
+      const res = await api<{ ok: boolean; count?: number; message?: string }>("/api/attendance/import", {
+        method: "POST",
+        body: fd,
       })
-    }, 500)
+      setUploadProgress(100)
+      setUploadResult(res)
+      if (res.ok) {
+        setSelectedFile(null)
+        setTimeout(() => {
+          setIsUploadOpen(false)
+          setUploadProgress(0)
+          setIsUploading(false)
+        }, 800)
+      } else {
+        setIsUploading(false)
+      }
+    } catch (err) {
+      setUploadResult({ ok: false, message: (err as Error).message })
+      setUploadProgress(0)
+      setIsUploading(false)
+    }
   }
 
   return (
@@ -175,15 +203,35 @@ export default function AttendanceImportPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>上传文件</Label>
-                  <div className="flex h-32 cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-border hover:border-primary hover:bg-primary/5 transition-colors">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".xls,.xlsx"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => fileInputRef.current?.click()}
+                    onKeyDown={(e) => e.key === "Enter" && fileInputRef.current?.click()}
+                    className="flex h-32 cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-border hover:border-primary hover:bg-primary/5 transition-colors"
+                  >
                     <div className="text-center">
                       <FileSpreadsheet className="mx-auto h-8 w-8 text-muted-foreground" />
                       <p className="mt-2 text-sm text-muted-foreground">
-                        点击或拖拽文件到此处上传
+                        {selectedFile ? selectedFile.name : "点击或拖拽文件到此处上传"}
                       </p>
                       <p className="text-xs text-muted-foreground">支持 XLS、XLSX 格式</p>
                     </div>
                   </div>
+                  {uploadResult && (
+                    <p className={`text-sm ${uploadResult.ok ? "text-accent" : "text-destructive"}`}>
+                      {uploadResult.ok
+                        ? `导入成功，共 ${uploadResult.count ?? 0} 条记录`
+                        : uploadResult.message ?? "导入失败"}
+                    </p>
+                  )}
                 </div>
 
                 {isUploading && (
@@ -212,7 +260,7 @@ export default function AttendanceImportPage() {
                 <Button variant="outline" onClick={() => setIsUploadOpen(false)}>
                   取消
                 </Button>
-                <Button onClick={handleUpload} disabled={isUploading}>
+                <Button onClick={handleUpload} disabled={isUploading || !selectedFile}>
                   {isUploading ? "处理中..." : "开始导入"}
                 </Button>
               </DialogFooter>

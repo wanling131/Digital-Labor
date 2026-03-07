@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -41,8 +41,21 @@ import {
   LineChart,
   Line,
 } from "recharts"
+import { api } from "@/lib/api"
 
-const personnelWorkHours = [
+interface AttendanceItem {
+  id: number
+  person_id: number
+  person_name?: string
+  work_no?: string
+  org_name?: string
+  work_date?: string
+  clock_in?: string
+  clock_out?: string
+  hours?: number
+}
+
+const personnelWorkHoursMock = [
   {
     id: "EMP001",
     name: "张三",
@@ -95,7 +108,7 @@ const personnelWorkHours = [
   },
 ]
 
-const teamWorkHours = [
+const teamWorkHoursMock = [
   { team: "钢筋班组", personnel: 245, totalHours: 52920, avgHours: 216 },
   { team: "木工班组", personnel: 198, totalHours: 42768, avgHours: 216 },
   { team: "混凝土班组", personnel: 176, totalHours: 38016, avgHours: 216 },
@@ -117,12 +130,101 @@ const trendData = [
 export default function AttendanceReportPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedProject, setSelectedProject] = useState("all")
-
-  const filteredData = personnelWorkHours.filter((person) => {
-    const matchesSearch = person.name.includes(searchTerm) || person.id.includes(searchTerm)
-    const matchesProject = selectedProject === "all" || person.project.includes(selectedProject)
-    return matchesSearch && matchesProject
+  const [month, setMonth] = useState(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
   })
+  const [list, setList] = useState<AttendanceItem[]>([])
+  const [total, setTotal] = useState(0)
+  const [orgList, setOrgList] = useState<{ id: number; name: string }[]>([])
+
+  const fetchList = useCallback(async () => {
+    try {
+      let start = ""
+      let end = ""
+      if (month) {
+        start = `${month}-01`
+        const [y, m] = month.split("-").map(Number)
+        const lastDay = new Date(y, m, 0).getDate()
+        end = `${month}-${String(lastDay).padStart(2, "0")}`
+      }
+      const q: Record<string, string> = { pageSize: "100" }
+      if (start) q.start = start
+      if (end) q.end = end
+      if (selectedProject !== "all") q.org_id = selectedProject
+      const res = await api<{ list: AttendanceItem[]; total: number }>("/api/attendance/report", { query: q })
+      setList(res.list ?? [])
+      setTotal(res.total ?? 0)
+    } catch { setList([]); setTotal(0) }
+  }, [month, selectedProject])
+
+  const fetchOrg = useCallback(async () => {
+    try {
+      const { tree } = await api<{ tree: { id: number; name: string; children?: unknown[] }[] }>("/api/sys/org")
+      const flatten = (n: { id: number; name: string; children?: unknown[] }[]): { id: number; name: string }[] => {
+        const out: { id: number; name: string }[] = []
+        n.forEach((x) => { out.push({ id: x.id, name: x.name }); if (x.children?.length) out.push(...flatten(x.children as { id: number; name: string; children?: unknown[] }[])) })
+        return out
+      }
+      setOrgList(flatten(tree ?? []))
+    } catch { setOrgList([]) }
+  }, [])
+
+  useEffect(() => { fetchList() }, [fetchList])
+  useEffect(() => { fetchOrg() }, [fetchOrg])
+
+  const filteredData = list.filter((p) =>
+    (p.person_name ?? "").includes(searchTerm) || (p.work_no ?? "").includes(searchTerm)
+  )
+
+  const workDaysByPerson = filteredData.reduce((acc, r) => {
+    const k = r.person_id
+    if (!acc[k]) acc[k] = { name: r.person_name ?? "-", work_no: r.work_no ?? "-", org: r.org_name ?? "-", days: 0, hours: 0 }
+    acc[k].days++
+    acc[k].hours += r.hours ?? 0
+    return acc
+  }, {} as Record<number, { name: string; work_no: string; org: string; days: number; hours: number }>)
+  const personList = Object.entries(workDaysByPerson).map(([id, v]) => ({ id: Number(id), ...v }))
+  const totalHours = personList.reduce((s, p) => s + p.hours, 0)
+
+  const handleExportCsv = () => {
+    const headers = ["工号", "姓名", "组织", "日期", "上班", "下班", "工时"]
+    const rows = filteredData.map((r) => [
+      r.work_no ?? "",
+      r.person_name ?? "",
+      r.org_name ?? "",
+      r.work_date ?? "",
+      r.clock_in ?? "",
+      r.clock_out ?? "",
+      String(r.hours ?? 0),
+    ])
+    const csv = [headers.join(","), ...rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))].join("\n")
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" })
+    const a = document.createElement("a")
+    a.href = URL.createObjectURL(blob)
+    a.download = `工时报表_${month}_${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+  const teamHours = Object.entries(
+    filteredData.reduce((acc, r) => {
+      const org = r.org_name ?? "其他"
+      if (!acc[org]) acc[org] = { personnel: 0, totalHours: 0 }
+      acc[org].totalHours += r.hours ?? 0
+      return acc
+    }, {} as Record<string, { personnel: number; totalHours: number }>)
+  ).map(([team, v]) => ({ team, personnel: v.personnel || 1, totalHours: v.totalHours, avgHours: v.totalHours }))
+  const trendData = Object.entries(
+    filteredData.reduce((acc, r) => {
+      const d = (r.work_date ?? "").slice(5)
+      if (!d) return acc
+      if (!acc[d]) acc[d] = 0
+      acc[d] += r.hours ?? 0
+      return acc
+    }, {} as Record<string, number>)
+  )
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, hours]) => ({ date, hours }))
 
   return (
     <div className="space-y-6">
@@ -132,17 +234,20 @@ export default function AttendanceReportPage() {
           <p className="text-muted-foreground">多维度工时汇总统计与导出</p>
         </div>
         <div className="flex items-center gap-2">
-          <Select defaultValue="2024-03">
+          <Select value={month} onValueChange={(v) => { setMonth(v) }}>
             <SelectTrigger className="w-40">
               <SelectValue placeholder="选择周期" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="2024-03">2024年3月</SelectItem>
-              <SelectItem value="2024-02">2024年2月</SelectItem>
-              <SelectItem value="2024-01">2024年1月</SelectItem>
+              {Array.from({ length: 12 }, (_, i) => {
+                const y = new Date().getFullYear()
+                const m = i + 1
+                const v = `${y}-${String(m).padStart(2, "0")}`
+                return <SelectItem key={v} value={v}>{y}年{m}月</SelectItem>
+              })}
             </SelectContent>
           </Select>
-          <Button variant="outline" className="gap-2">
+          <Button variant="outline" className="gap-2" onClick={handleExportCsv}>
             <Download className="h-4 w-4" />
             导出报表
           </Button>
@@ -159,7 +264,7 @@ export default function AttendanceReportPage() {
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">本月总工时</p>
-                <p className="text-2xl font-bold">220,536</p>
+                <p className="text-2xl font-bold">{totalHours.toLocaleString()}</p>
                 <p className="text-xs text-muted-foreground">小时</p>
               </div>
             </div>
@@ -173,7 +278,7 @@ export default function AttendanceReportPage() {
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">出勤人数</p>
-                <p className="text-2xl font-bold">3,350</p>
+                <p className="text-2xl font-bold">{personList.length}</p>
                 <p className="text-xs text-muted-foreground">人</p>
               </div>
             </div>
@@ -187,7 +292,7 @@ export default function AttendanceReportPage() {
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">人均工时</p>
-                <p className="text-2xl font-bold">65.8</p>
+                <p className="text-2xl font-bold">{personList.length ? (totalHours / personList.length).toFixed(1) : 0}</p>
                 <p className="text-xs text-muted-foreground">小时/人</p>
               </div>
             </div>
@@ -200,8 +305,8 @@ export default function AttendanceReportPage() {
                 <TrendingUp className="h-5 w-5 text-chart-5" />
               </div>
               <div>
-                <p className="text-sm font-medium text-muted-foreground">加班工时</p>
-                <p className="text-2xl font-bold">18,245</p>
+                <p className="text-sm font-medium text-muted-foreground">记录数</p>
+                <p className="text-2xl font-bold">{filteredData.length}</p>
                 <p className="text-xs text-muted-foreground">小时</p>
               </div>
             </div>
@@ -249,10 +354,10 @@ export default function AttendanceReportPage() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={teamWorkHours} layout="vertical" margin={{ left: 20 }}>
+              <BarChart data={teamHours.length ? teamHours : [{ team: "-", totalHours: 0 }]} layout="vertical" margin={{ left: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                 <XAxis type="number" className="text-xs" />
-                <YAxis dataKey="team" type="category" className="text-xs" width={80} />
+                <YAxis dataKey="team" type="category" width={100} className="text-xs" width={80} />
                 <Tooltip
                   contentStyle={{
                     backgroundColor: "var(--card)",
@@ -294,9 +399,7 @@ export default function AttendanceReportPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">全部项目</SelectItem>
-                    <SelectItem value="项目A">项目A-主体工程</SelectItem>
-                    <SelectItem value="项目B">项目B-装修工程</SelectItem>
-                    <SelectItem value="项目C">项目C-基建工程</SelectItem>
+                    {orgList.map((o) => <SelectItem key={o.id} value={String(o.id)}>{o.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 <Button variant="outline" size="icon">
@@ -321,28 +424,18 @@ export default function AttendanceReportPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredData.map((person) => (
+                  {personList.map((person) => (
                     <TableRow key={person.id}>
-                      <TableCell className="font-medium">{person.id}</TableCell>
+                      <TableCell className="font-medium">{person.work_no}</TableCell>
                       <TableCell>{person.name}</TableCell>
-                      <TableCell>{person.project}</TableCell>
-                      <TableCell>{person.team}</TableCell>
-                      <TableCell>{person.workDays}天</TableCell>
-                      <TableCell className="font-medium">{person.totalHours}小时</TableCell>
-                      <TableCell>{person.avgHours}小时</TableCell>
-                      <TableCell>
-                        {person.overtime > 0 ? (
-                          <Badge variant="outline" className="bg-chart-5/10 text-chart-5 border-chart-5/20">
-                            {person.overtime}小时
-                          </Badge>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
+                      <TableCell>{person.org}</TableCell>
+                      <TableCell>-</TableCell>
+                      <TableCell>{person.days}天</TableCell>
+                      <TableCell className="font-medium">{person.hours.toFixed(1)}小时</TableCell>
+                      <TableCell>{(person.days ? person.hours / person.days : 0).toFixed(1)}小时</TableCell>
+                      <TableCell><span className="text-muted-foreground">-</span></TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="sm">
-                          详情
-                        </Button>
+                        <Button variant="ghost" size="sm">详情</Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -362,14 +455,14 @@ export default function AttendanceReportPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {teamWorkHours.map((team) => (
+                  {teamHours.map((team) => (
                     <TableRow key={team.team}>
                       <TableCell className="font-medium">{team.team}</TableCell>
                       <TableCell>{team.personnel}人</TableCell>
                       <TableCell className="font-medium">
                         {team.totalHours.toLocaleString()}小时
                       </TableCell>
-                      <TableCell>{team.avgHours}小时</TableCell>
+                      <TableCell>{team.avgHours.toFixed(0)}小时</TableCell>
                       <TableCell className="text-right">
                         <Button variant="ghost" size="sm">
                           详情
@@ -393,18 +486,14 @@ export default function AttendanceReportPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {[
-                    { project: "项目A-主体工程", personnel: 856, totalHours: 184896, avgHours: 216 },
-                    { project: "项目B-装修工程", personnel: 642, totalHours: 138672, avgHours: 216 },
-                    { project: "项目C-基建工程", personnel: 534, totalHours: 115344, avgHours: 216 },
-                  ].map((project) => (
-                    <TableRow key={project.project}>
-                      <TableCell className="font-medium">{project.project}</TableCell>
+                  {teamHours.map((project) => (
+                    <TableRow key={project.team}>
+                      <TableCell className="font-medium">{project.team}</TableCell>
                       <TableCell>{project.personnel}人</TableCell>
                       <TableCell className="font-medium">
                         {project.totalHours.toLocaleString()}小时
                       </TableCell>
-                      <TableCell>{project.avgHours}小时</TableCell>
+                      <TableCell>{project.avgHours.toFixed(0)}小时</TableCell>
                       <TableCell className="text-right">
                         <Button variant="ghost" size="sm">
                           详情

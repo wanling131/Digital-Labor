@@ -28,25 +28,25 @@ function clearSeedData() {
 
 // 1. 组织架构：公司 → 项目部 → 标段 → 班组
 function seedOrg() {
-  const ins = db.prepare('INSERT INTO org (parent_id, name, type, sort) VALUES (?, ?, ?, ?)')
-  ins.run(0, '某某建设集团有限公司', 'company', 0)
+  const ins = db.prepare('INSERT INTO org (parent_id, name, type, sort, manager) VALUES (?, ?, ?, ?, ?)')
+  ins.run(0, '某某建设集团有限公司', 'company', 0, '张总')
   const companyId = db.prepare('SELECT last_insert_rowid()').get()['last_insert_rowid()']
-  ins.run(companyId, '东区项目部', 'project', 0)
+  ins.run(companyId, '东区项目部', 'project', 0, '李明')
   const proj1 = db.prepare('SELECT last_insert_rowid()').get()['last_insert_rowid()']
-  ins.run(companyId, '西区项目部', 'project', 1)
+  ins.run(companyId, '西区项目部', 'project', 1, '陈刚')
   const proj2 = db.prepare('SELECT last_insert_rowid()').get()['last_insert_rowid()']
-  ins.run(proj1, 'A 标段', 'segment', 0)
+  ins.run(proj1, 'A 标段', 'segment', 0, '王建')
   const seg1 = db.prepare('SELECT last_insert_rowid()').get()['last_insert_rowid()']
-  ins.run(proj1, 'B 标段', 'segment', 1)
+  ins.run(proj1, 'B 标段', 'segment', 1, null)
   const seg2 = db.prepare('SELECT last_insert_rowid()').get()['last_insert_rowid()']
-  ins.run(proj2, 'C 标段', 'segment', 0)
+  ins.run(proj2, 'C 标段', 'segment', 0, null)
   const seg3 = db.prepare('SELECT last_insert_rowid()').get()['last_insert_rowid()']
-  ins.run(seg1, '钢筋班组', 'team', 0)
-  ins.run(seg1, '木工班组', 'team', 1)
-  ins.run(seg2, '混凝土班组', 'team', 0)
-  ins.run(seg2, '架子工班组', 'team', 1)
-  ins.run(seg3, '水电班组', 'team', 0)
-  ins.run(seg3, '装修班组', 'team', 1)
+  ins.run(seg1, '钢筋班组', 'team', 0, '赵强')
+  ins.run(seg1, '木工班组', 'team', 1, '钱进')
+  ins.run(seg2, '混凝土班组', 'team', 0, null)
+  ins.run(seg2, '架子工班组', 'team', 1, null)
+  ins.run(seg3, '水电班组', 'team', 0, null)
+  ins.run(seg3, '装修班组', 'team', 1, null)
   return { companyId, proj1, proj2, seg1, seg2, seg3 }
 }
 

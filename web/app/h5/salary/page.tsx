@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -23,6 +23,7 @@ import {
   Loader2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { apiWorker, downloadSettlementSlip } from "@/lib/api"
 
 interface SalaryRecord {
   id: string
@@ -38,72 +39,25 @@ interface SalaryRecord {
   workHours: number
 }
 
-const salaryRecords: SalaryRecord[] = [
-  {
-    id: "1",
-    month: "2024年3月",
-    baseSalary: 6000,
-    overtimePay: 2000,
-    bonus: 800,
-    deductions: 300,
-    total: 8500,
-    status: "pending",
-    workDays: 22,
-    workHours: 176,
-  },
-  {
-    id: "2",
-    month: "2024年2月",
-    baseSalary: 6000,
-    overtimePay: 1800,
-    bonus: 500,
-    deductions: 280,
-    total: 8020,
-    status: "paid",
-    paidAt: "2024-03-05",
-    workDays: 20,
-    workHours: 160,
-  },
-  {
-    id: "3",
-    month: "2024年1月",
-    baseSalary: 6000,
-    overtimePay: 2200,
-    bonus: 1200,
-    deductions: 320,
-    total: 9080,
-    status: "paid",
-    paidAt: "2024-02-05",
-    workDays: 23,
-    workHours: 184,
-  },
-  {
-    id: "4",
-    month: "2023年12月",
-    baseSalary: 5500,
-    overtimePay: 1500,
-    bonus: 2000,
-    deductions: 260,
-    total: 8740,
-    status: "paid",
-    paidAt: "2024-01-05",
-    workDays: 21,
-    workHours: 168,
-  },
-  {
-    id: "5",
-    month: "2023年11月",
-    baseSalary: 5500,
-    overtimePay: 1600,
-    bonus: 400,
-    deductions: 250,
-    total: 7250,
-    status: "paid",
-    paidAt: "2023-12-05",
-    workDays: 22,
-    workHours: 176,
-  },
-]
+function mapSettlement(s: { id: number; period_start?: string; period_end?: string; total_hours?: number; amount_due?: number; amount_paid?: number; status?: string }): SalaryRecord {
+  const monthStr = s.period_start ? `${s.period_start.slice(0, 4)}年${parseInt(s.period_start.slice(5, 7), 10)}月` : ""
+  const total = Number(s.amount_paid ?? s.amount_due ?? 0)
+  const status = s.status === "已发放" ? "paid" : s.status === "待确认" ? "pending" : "processing"
+  const hours = Number(s.total_hours ?? 0)
+  return {
+    id: String(s.id),
+    month: monthStr,
+    baseSalary: total,
+    overtimePay: 0,
+    bonus: 0,
+    deductions: 0,
+    total,
+    status,
+    paidAt: status === "paid" ? s.period_end : undefined,
+    workDays: Math.round(hours / 8),
+    workHours: hours,
+  }
+}
 
 const statusConfig = {
   paid: { label: "已发放", color: "bg-green-100 text-green-700" },
@@ -111,29 +65,91 @@ const statusConfig = {
   processing: { label: "发放中", color: "bg-blue-100 text-blue-700" },
 }
 
+type PendingSettlement = { id: number; period_start: string; period_end: string; amount_due: number; status: string }
+
 export default function SalaryPage() {
   const [selectedRecord, setSelectedRecord] = useState<SalaryRecord | null>(null)
   const [showDetail, setShowDetail] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
+  const [pendingList, setPendingList] = useState<PendingSettlement[]>([])
+  const [salaryRecords, setSalaryRecords] = useState<SalaryRecord[]>([])
+  const [confirmingId, setConfirmingId] = useState<number | null>(null)
+  const [faceStep, setFaceStep] = useState<number | null>(null)
+  const [workerId, setWorkerId] = useState<number | null>(null)
 
-  const handleRefresh = useCallback(async () => {
-    await new Promise(resolve => setTimeout(resolve, 1000))
+  const loadData = useCallback(async () => {
+    try {
+      const [pendingRes, myRes] = await Promise.all([
+        apiWorker<{ list: PendingSettlement[] }>("/api/settlement/my-pending"),
+        apiWorker<{ list: unknown[] }>("/api/settlement/my"),
+      ])
+      setPendingList(pendingRes.list || [])
+      setSalaryRecords((myRes.list || []).map((s: Record<string, unknown>) => mapSettlement(s as Parameters<typeof mapSettlement>[0])))
+    } catch {
+      setPendingList([])
+      setSalaryRecords([])
+    }
   }, [])
 
-  const handleDownload = () => {
+  useEffect(() => {
+    loadData()
+  }, [loadData])
+
+  useEffect(() => {
+    apiWorker<{ id?: number }>("/api/worker/me").then((me) => setWorkerId(me.id ?? null)).catch(() => setWorkerId(null))
+  }, [])
+
+  const handleConfirmSettlement = useCallback(async (id: number) => {
+    setConfirmingId(id)
+    setFaceStep(id)
+    try {
+      if (workerId != null) {
+        await apiWorker("/api/person/face-verify", { method: "POST", body: { person_id: workerId } })
+      }
+      setFaceStep(null)
+      await apiWorker(`/api/settlement/confirm/${id}`, { method: "POST", body: { action: "confirm" } })
+      setPendingList((prev) => prev.filter((s) => s.id !== id))
+      await loadData()
+    } catch {
+      setFaceStep(null)
+    } finally {
+      setConfirmingId(null)
+    }
+  }, [workerId, loadData])
+
+  const handleRejectSettlement = useCallback(async (id: number) => {
+    setConfirmingId(id)
+    try {
+      await apiWorker(`/api/settlement/confirm/${id}`, { method: "POST", body: { action: "reject" } })
+      setPendingList((prev) => prev.filter((s) => s.id !== id))
+      await loadData()
+    } finally {
+      setConfirmingId(null)
+    }
+  }, [loadData])
+
+  const handleRefresh = useCallback(async () => {
+    await loadData()
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }, [loadData])
+
+  const handleDownload = async (id: string) => {
     setIsDownloading(true)
-    setTimeout(() => {
+    try {
+      const result = await downloadSettlementSlip(id)
+      if (!result.ok) alert(result.message)
+    } finally {
       setIsDownloading(false)
-    }, 1500)
+    }
   }
 
   const currentMonthSalary = salaryRecords[0]
   const lastMonthSalary = salaryRecords[1]
   const totalThisYear = salaryRecords.reduce((acc, record) => acc + record.total, 0)
-  const avgSalary = Math.round(totalThisYear / salaryRecords.length)
+  const avgSalary = salaryRecords.length > 0 ? Math.round(totalThisYear / salaryRecords.length) : 0
 
-  const salaryChange = currentMonthSalary.total - lastMonthSalary.total
-  const changePercent = ((salaryChange / lastMonthSalary.total) * 100).toFixed(1)
+  const salaryChange = currentMonthSalary && lastMonthSalary ? currentMonthSalary.total - lastMonthSalary.total : 0
+  const changePercent = lastMonthSalary && lastMonthSalary.total ? ((salaryChange / lastMonthSalary.total) * 100).toFixed(1) : "0"
 
   return (
     <PullRefresh onRefresh={handleRefresh} className="pb-24 min-h-screen">
@@ -145,15 +161,16 @@ export default function SalaryPage() {
         <Card className="bg-primary-foreground/10 border-0 backdrop-blur-sm mt-4">
           <CardContent className="p-6">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm opacity-80">{currentMonthSalary.month}（预计）</span>
-              <Badge className={statusConfig[currentMonthSalary.status].color}>
-                {statusConfig[currentMonthSalary.status].label}
+              <span className="text-sm opacity-80">{currentMonthSalary?.month ?? "本月"}（预计）</span>
+              <Badge className={currentMonthSalary ? statusConfig[currentMonthSalary.status].color : "bg-muted"}>
+                {currentMonthSalary ? statusConfig[currentMonthSalary.status].label : "—"}
               </Badge>
             </div>
             <div className="flex items-baseline gap-1 mb-4">
               <span className="text-sm">¥</span>
-              <span className="text-4xl font-bold">{currentMonthSalary.total.toLocaleString()}</span>
+              <span className="text-4xl font-bold">{(currentMonthSalary?.total ?? 0).toLocaleString()}</span>
             </div>
+            {currentMonthSalary && lastMonthSalary && (
             <div className="flex items-center gap-2 text-sm">
               {salaryChange >= 0 ? (
                 <>
@@ -167,9 +184,49 @@ export default function SalaryPage() {
                 </>
               )}
             </div>
+            )}
           </CardContent>
         </Card>
       </div>
+
+      {/* 待确认结算单 */}
+      {pendingList.length > 0 && (
+        <div className="px-4 -mt-8 mb-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">待确认结算单</CardTitle>
+              <p className="text-xs text-muted-foreground">人脸验证（占位）通过后可确认</p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {pendingList.map((s) => (
+                <div key={s.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
+                  <div>
+                    <p className="font-medium text-sm">{s.period_start} ～ {s.period_end}</p>
+                    <p className="text-lg font-semibold text-primary">¥{(s.amount_due ?? 0).toLocaleString()}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={confirmingId !== null}
+                      onClick={() => handleRejectSettlement(s.id)}
+                    >
+                      驳回
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={confirmingId !== null}
+                      onClick={() => handleConfirmSettlement(s.id!)}
+                    >
+                      {faceStep === s.id ? "验证中..." : confirmingId === s.id ? "提交中..." : "确认"}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="px-4 -mt-8">
@@ -178,11 +235,11 @@ export default function SalaryPage() {
             <div className="grid grid-cols-3 gap-4 text-center">
               <div>
                 <p className="text-xs text-muted-foreground mb-1">本月出勤</p>
-                <p className="text-xl font-bold">{currentMonthSalary.workDays}<span className="text-sm font-normal">天</span></p>
+                <p className="text-xl font-bold">{currentMonthSalary?.workDays ?? 0}<span className="text-sm font-normal">天</span></p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground mb-1">工作时长</p>
-                <p className="text-xl font-bold">{currentMonthSalary.workHours}<span className="text-sm font-normal">h</span></p>
+                <p className="text-xl font-bold">{currentMonthSalary?.workHours ?? 0}<span className="text-sm font-normal">h</span></p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground mb-1">月均工资</p>
@@ -203,23 +260,23 @@ export default function SalaryPage() {
             <div className="space-y-3">
               <div className="flex items-center justify-between py-2 border-b border-border">
                 <span className="text-muted-foreground">基本工资</span>
-                <span className="font-medium">¥{currentMonthSalary.baseSalary.toLocaleString()}</span>
+                <span className="font-medium">¥{(currentMonthSalary?.baseSalary ?? 0).toLocaleString()}</span>
               </div>
               <div className="flex items-center justify-between py-2 border-b border-border">
                 <span className="text-muted-foreground">加班费</span>
-                <span className="font-medium text-green-600">+¥{currentMonthSalary.overtimePay.toLocaleString()}</span>
+                <span className="font-medium text-green-600">+¥{(currentMonthSalary?.overtimePay ?? 0).toLocaleString()}</span>
               </div>
               <div className="flex items-center justify-between py-2 border-b border-border">
                 <span className="text-muted-foreground">奖金/补贴</span>
-                <span className="font-medium text-green-600">+¥{currentMonthSalary.bonus.toLocaleString()}</span>
+                <span className="font-medium text-green-600">+¥{(currentMonthSalary?.bonus ?? 0).toLocaleString()}</span>
               </div>
               <div className="flex items-center justify-between py-2 border-b border-border">
                 <span className="text-muted-foreground">扣款</span>
-                <span className="font-medium text-red-500">-¥{currentMonthSalary.deductions.toLocaleString()}</span>
+                <span className="font-medium text-red-500">-¥{(currentMonthSalary?.deductions ?? 0).toLocaleString()}</span>
               </div>
               <div className="flex items-center justify-between py-2 font-semibold">
                 <span>实发金额</span>
-                <span className="text-primary text-lg">¥{currentMonthSalary.total.toLocaleString()}</span>
+                <span className="text-primary text-lg">¥{(currentMonthSalary?.total ?? 0).toLocaleString()}</span>
               </div>
             </div>
           </CardContent>
@@ -327,7 +384,7 @@ export default function SalaryPage() {
               <Button 
                 className="w-full active:scale-95 transition-transform" 
                 variant="outline"
-                onClick={handleDownload}
+                onClick={() => selectedRecord && handleDownload(selectedRecord.id)}
                 disabled={isDownloading}
               >
                 {isDownloading ? (

@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -46,6 +47,19 @@ import {
   Cell,
   Legend,
 } from "recharts"
+import { api } from "@/lib/api"
+
+interface SalaryItem {
+  id: number
+  person_name?: string
+  work_no?: string
+  period_start?: string
+  period_end?: string
+  total_hours?: number
+  amount_due?: number
+  amount_paid?: number
+  status?: string
+}
 
 const monthlyCostData = [
   { month: "1月", cost: 1250000 },
@@ -110,6 +124,28 @@ const salaryHistory = [
 ]
 
 export default function SettlementAnalysisPage() {
+  const [list, setList] = useState<SalaryItem[]>([])
+  const [total, setTotal] = useState(0)
+  const [month, setMonth] = useState(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+  })
+
+  const fetchList = useCallback(async () => {
+    try {
+      const res = await api<{ list: SalaryItem[]; total: number }>("/api/settlement/salary", {
+        query: { month, pageSize: "100" },
+      })
+      setList(res.list ?? [])
+      setTotal(res.total ?? 0)
+    } catch { setList([]); setTotal(0) }
+  }, [month])
+
+  useEffect(() => { fetchList() }, [fetchList])
+
+  const totalAmount = list.reduce((s, r) => s + (r.amount_paid ?? r.amount_due ?? 0), 0)
+  const totalPaid = list.reduce((s, r) => s + (r.amount_paid ?? 0), 0)
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -118,13 +154,17 @@ export default function SettlementAnalysisPage() {
           <p className="text-muted-foreground">项目人力成本分析与个人薪资历史查询</p>
         </div>
         <div className="flex items-center gap-2">
-          <Select defaultValue="2024">
-            <SelectTrigger className="w-32">
-              <SelectValue placeholder="选择年度" />
+          <Select value={month} onValueChange={setMonth}>
+            <SelectTrigger className="w-36">
+              <SelectValue placeholder="选择月份" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="2024">2024年</SelectItem>
-              <SelectItem value="2023">2023年</SelectItem>
+              {Array.from({ length: 12 }, (_, i) => {
+                const y = new Date().getFullYear()
+                const m = i + 1
+                const v = `${y}-${String(m).padStart(2, "0")}`
+                return <SelectItem key={v} value={v}>{y}年{m}月</SelectItem>
+              })}
             </SelectContent>
           </Select>
           <Button variant="outline" className="gap-2">
@@ -141,7 +181,7 @@ export default function SettlementAnalysisPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">本月人力成本</p>
-                <p className="text-2xl font-bold">¥1,750,000</p>
+                <p className="text-2xl font-bold">¥{totalAmount.toLocaleString()}</p>
                 <div className="mt-1 flex items-center gap-1">
                   <TrendingUp className="h-4 w-4 text-destructive" />
                   <span className="text-sm text-destructive">+8.2%</span>
@@ -159,7 +199,7 @@ export default function SettlementAnalysisPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">累计发放</p>
-                <p className="text-2xl font-bold">¥8,700,000</p>
+                <p className="text-2xl font-bold">¥{totalPaid.toLocaleString()}</p>
                 <p className="text-sm text-muted-foreground">本年度</p>
               </div>
               <div className="rounded-full bg-accent/10 p-3">
@@ -173,7 +213,7 @@ export default function SettlementAnalysisPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">人均薪资</p>
-                <p className="text-2xl font-bold">¥5,224</p>
+                <p className="text-2xl font-bold">¥{list.length ? Math.round(totalAmount / list.length).toLocaleString() : 0}</p>
                 <div className="mt-1 flex items-center gap-1">
                   <TrendingDown className="h-4 w-4 text-accent" />
                   <span className="text-sm text-accent">-2.1%</span>
@@ -191,7 +231,7 @@ export default function SettlementAnalysisPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">发薪人数</p>
-                <p className="text-2xl font-bold">3,350</p>
+                <p className="text-2xl font-bold">{list.length}</p>
                 <p className="text-sm text-muted-foreground">本月</p>
               </div>
               <div className="rounded-full bg-chart-5/10 p-3">
@@ -348,39 +388,28 @@ export default function SettlementAnalysisPage() {
                   <TableRow>
                     <TableHead>工号</TableHead>
                     <TableHead>姓名</TableHead>
-                    <TableHead>项目/班组</TableHead>
-                    <TableHead>近3月薪资</TableHead>
+                    <TableHead>结算周期</TableHead>
+                    <TableHead>金额</TableHead>
                     <TableHead>累计薪资</TableHead>
                     <TableHead className="text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {salaryHistory.map((person) => (
+                  {list.map((person) => (
                     <TableRow key={person.id}>
-                      <TableCell className="font-medium">{person.id}</TableCell>
-                      <TableCell>{person.name}</TableCell>
+                      <TableCell className="font-medium">{person.work_no ?? "-"}</TableCell>
+                      <TableCell>{person.person_name ?? "-"}</TableCell>
+                      <TableCell>{person.period_start ?? "-"}～{person.period_end ?? ""}</TableCell>
                       <TableCell>
-                        <div>
-                          <p className="text-sm">{person.project}</p>
-                          <p className="text-xs text-muted-foreground">{person.team}</p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          {person.records.map((record, index) => (
-                            <Badge key={index} variant="outline" className="text-xs">
-                              {record.month.slice(5)}: ¥{record.amount}
-                            </Badge>
-                          ))}
-                        </div>
+                        <Badge variant="outline" className="text-xs">
+                          {person.period_start?.slice(0, 7)}: ¥{(person.amount_paid ?? person.amount_due ?? 0).toLocaleString()}
+                        </Badge>
                       </TableCell>
                       <TableCell className="font-medium text-primary">
-                        ¥{person.totalAmount.toLocaleString()}
+                        ¥{(person.amount_paid ?? person.amount_due ?? 0).toLocaleString()}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="sm">
-                          查看明细
-                        </Button>
+                        <Button variant="ghost" size="sm">查看明细</Button>
                       </TableCell>
                     </TableRow>
                   ))}

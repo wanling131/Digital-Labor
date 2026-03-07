@@ -9,34 +9,49 @@ import { db } from '../db/index.js'
 const router = Router()
 const upload = multer({ storage: multer.memoryStorage() })
 
-function buildOrgTree(rows, parentId = 0) {
-  return rows.filter(r => r.parent_id === parentId).map(r => ({
-    ...r,
-    children: buildOrgTree(rows, r.id),
-  }))
-}
-
 router.get('/org', (_, res) => {
-  const rows = db.prepare('SELECT id, parent_id, name, type, sort, created_at FROM org ORDER BY sort, id').all()
+  const rows = db.prepare('SELECT id, parent_id, name, type, sort, manager, created_at FROM org ORDER BY sort, id').all()
+  const personCountByOrg = {}
+  db.prepare('SELECT org_id, COUNT(*) as n FROM person WHERE org_id IS NOT NULL GROUP BY org_id').all().forEach(r => {
+    personCountByOrg[r.org_id] = r.n
+  })
+  function getDescendantIds(id) {
+    const ids = [id]
+    rows.filter(r => r.parent_id === id).forEach(r => ids.push(...getDescendantIds(r.id)))
+    return ids
+  }
+  function buildOrgTree(rows, parentId = 0) {
+    return rows.filter(r => r.parent_id === parentId).map(r => {
+      const descendantIds = getDescendantIds(r.id)
+      const memberCount = descendantIds.reduce((sum, oid) => sum + (personCountByOrg[oid] || 0), 0)
+      return {
+        ...r,
+        manager: r.manager || '',
+        memberCount,
+        children: buildOrgTree(rows, r.id),
+      }
+    })
+  }
   const tree = buildOrgTree(rows)
   res.json({ tree })
 })
 
 router.post('/org', (req, res) => {
-  const { parent_id = 0, name, type = 'company', sort = 0 } = req.body || {}
+  const { parent_id = 0, name, type = 'company', sort = 0, manager } = req.body || {}
   if (!name) return res.status(400).json({ message: 'name 必填' })
-  const r = db.prepare('INSERT INTO org (parent_id, name, type, sort) VALUES (?, ?, ?, ?)').run(parent_id, name, type, sort)
+  const r = db.prepare('INSERT INTO org (parent_id, name, type, sort, manager) VALUES (?, ?, ?, ?, ?)').run(parent_id, name, type, sort, manager ?? null)
   res.json({ id: r.lastInsertRowid })
 })
 
 router.put('/org/:id', (req, res) => {
   const { id } = req.params
-  const { name, type, sort } = req.body || {}
+  const { name, type, sort, manager } = req.body || {}
   const updates = []
   const values = []
   if (name !== undefined) { updates.push('name = ?'); values.push(name) }
   if (type !== undefined) { updates.push('type = ?'); values.push(type) }
   if (sort !== undefined) { updates.push('sort = ?'); values.push(sort) }
+  if (manager !== undefined) { updates.push('manager = ?'); values.push(manager) }
   if (updates.length === 0) return res.status(400).json({ message: '无有效字段' })
   values.push(id)
   db.prepare(`UPDATE org SET ${updates.join(', ')} WHERE id = ?`).run(...values)
@@ -128,43 +143,63 @@ router.put('/user/:id', (req, res) => {
   res.json({ ok: true })
 })
 
-// 全量菜单定义（与前端 AdminLayout 一致，用于按角色过滤）
+// 全量菜单定义（与前端 /pc 路由一致，用于按角色过滤与权限配置）
 const FULL_MENUS = [
-  { path: '/admin', label: '工作台' },
-  { path: '/admin/person', label: '人员档案及实名中心', children: [
-    { path: '/admin/person/archive', label: '人员档案' },
-    { path: '/admin/person/auth', label: '认证管理' },
-    { path: '/admin/person/status', label: '状态管理' },
+  { path: '/pc/dashboard', label: '工作台' },
+  { path: '/pc/personnel', label: '人员档案及实名中心', children: [
+    { path: '/pc/personnel/archive', label: '人员档案' },
+    { path: '/pc/personnel/certification', label: '认证管理' },
+    { path: '/pc/personnel/status', label: '状态管理' },
   ]},
-  { path: '/admin/contract', label: '电子合同及签约中心', children: [
-    { path: '/admin/contract/template', label: '合同模板' },
-    { path: '/admin/contract/launch', label: '合同发起' },
-    { path: '/admin/contract/status', label: '签约状态' },
-    { path: '/admin/contract/archive', label: '合同归档' },
+  { path: '/pc/contract', label: '电子合同及签约中心', children: [
+    { path: '/pc/contract/template', label: '合同模板' },
+    { path: '/pc/contract/initiate', label: '合同发起' },
+    { path: '/pc/contract/status', label: '签约状态' },
+    { path: '/pc/contract/archive', label: '合同归档' },
   ]},
-  { path: '/admin/attendance', label: '考勤与工时管理', children: [
-    { path: '/admin/attendance/import', label: '考勤数据接入' },
-    { path: '/admin/attendance/report', label: '工时报表' },
+  { path: '/pc/attendance', label: '考勤与工时管理', children: [
+    { path: '/pc/attendance/import', label: '考勤数据接入' },
+    { path: '/pc/attendance/report', label: '工时报表' },
   ]},
-  { path: '/admin/settlement', label: '智能结算中心', children: [
-    { path: '/admin/settlement/confirm', label: '结算单确认' },
-    { path: '/admin/settlement/salary', label: '薪资报表' },
+  { path: '/pc/settlement', label: '智能结算中心', children: [
+    { path: '/pc/settlement/generate', label: '结算单生成与确认' },
+    { path: '/pc/settlement/analysis', label: '薪资报表与成本分析' },
   ]},
-  { path: '/admin/site', label: '项目现场管理', children: [
-    { path: '/admin/site/leave', label: '离场登记' },
-    { path: '/admin/site/board', label: '在岗看板' },
+  { path: '/pc/site', label: '项目现场管理', children: [
+    { path: '/pc/site/departure', label: '离场登记' },
+    { path: '/pc/site/realtime', label: '在岗人员实时看板' },
   ]},
-  { path: '/admin/data/board', label: '综合数据看板' },
-  { path: '/admin/sys', label: '系统管理', children: [
-    { path: '/admin/sys/user', label: '用户管理' },
-    { path: '/admin/sys/org', label: '组织管理' },
-    { path: '/admin/sys/role', label: '权限分配' },
-    { path: '/admin/sys/log', label: '操作日志' },
+  { path: '/pc/system', label: '系统管理', children: [
+    { path: '/pc/system/users', label: '用户管理' },
+    { path: '/pc/system/organization', label: '组织管理' },
+    { path: '/pc/system/permissions', label: '权限分配' },
+    { path: '/pc/system/logs', label: '操作日志' },
   ]},
 ]
 
-// user 角色不可见的菜单 path（仅系统管理下部分）
-const USER_HIDDEN_PATHS = ['/admin/sys/user', '/admin/sys/role', '/admin/sys/log']
+// 从树中收集所有 path（含父节点 path，用于配置页勾选）
+function collectPaths(menus, out = []) {
+  for (const m of menus) {
+    if (m.path && !out.includes(m.path)) out.push(m.path)
+    if (m.children) collectPaths(m.children, out)
+  }
+  return out
+}
+const ALL_PATHS = collectPaths(FULL_MENUS)
+
+// user 角色默认不可见的 path（无 role_menu 时的回退逻辑）
+const USER_HIDDEN_PATHS = ['/pc/system/users', '/pc/system/permissions', '/pc/system/logs']
+
+function filterMenusByAllowedPaths(menus, allowedSet) {
+  return menus.map(m => {
+    if (m.children) {
+      const children = filterMenusByAllowedPaths(m.children, allowedSet)
+      if (children.length === 0 && !allowedSet.has(m.path)) return null
+      return { ...m, children }
+    }
+    return allowedSet.has(m.path) ? m : null
+  }).filter(Boolean)
+}
 
 function filterMenusByRole(menus, role) {
   if (role === 'admin') return menus
@@ -178,21 +213,70 @@ function filterMenusByRole(menus, role) {
   }).filter(Boolean)
 }
 
+// 初始化 role_menu：若表为空则写入 admin 全量、user 为过滤后
+function seedRoleMenuIfEmpty() {
+  const count = db.prepare('SELECT COUNT(*) as n FROM role_menu').get().n
+  if (count > 0) return
+  for (const path of ALL_PATHS) {
+    db.prepare('INSERT OR IGNORE INTO role_menu (role_code, menu_path) VALUES (?, ?)').run('admin', path)
+  }
+  const userAllowed = ALL_PATHS.filter(p => !USER_HIDDEN_PATHS.includes(p))
+  for (const path of userAllowed) {
+    db.prepare('INSERT OR IGNORE INTO role_menu (role_code, menu_path) VALUES (?, ?)').run('user', path)
+  }
+}
+
 router.get('/my-menu', (req, res) => {
   const userId = req.user?.userId
   if (!userId) return res.status(401).json({ message: '未登录' })
+  seedRoleMenuIfEmpty()
   const row = db.prepare('SELECT role FROM user WHERE id = ? AND enabled = 1').get(userId)
   const role = row?.role || 'user'
-  const menus = filterMenusByRole(FULL_MENUS, role)
+  const rows = db.prepare('SELECT menu_path FROM role_menu WHERE role_code = ?').all(role)
+  const allowedSet = new Set(rows.map(r => r.menu_path))
+  const menus = allowedSet.size > 0
+    ? filterMenusByAllowedPaths(JSON.parse(JSON.stringify(FULL_MENUS)), allowedSet)
+    : filterMenusByRole(JSON.parse(JSON.stringify(FULL_MENUS)), role)
   res.json({ menus })
 })
 
+// 全量菜单树（供权限配置页使用）
+router.get('/all-menus', (_, res) => {
+  seedRoleMenuIfEmpty()
+  res.json({ menus: FULL_MENUS })
+})
+
 router.get('/role', (_, res) => {
+  const roleCounts = {}
+  db.prepare('SELECT role, COUNT(*) as n FROM user GROUP BY role').all().forEach(r => {
+    roleCounts[r.role] = r.n
+  })
   const list = [
-    { code: 'admin', name: '管理员', desc: '拥有全部菜单与功能' },
-    { code: 'user', name: '业务员', desc: '不含用户管理、权限分配、操作日志' },
+    { code: 'admin', name: '管理员', desc: '拥有全部菜单与功能', userCount: roleCounts.admin ?? 0 },
+    { code: 'user', name: '业务员', desc: '不含用户管理、权限分配、操作日志', userCount: roleCounts.user ?? 0 },
   ]
   res.json({ list })
+})
+
+// 获取某角色的菜单 path 列表
+router.get('/role/:code/menus', (req, res) => {
+  const { code } = req.params
+  seedRoleMenuIfEmpty()
+  const rows = db.prepare('SELECT menu_path FROM role_menu WHERE role_code = ?').all(code)
+  res.json({ paths: rows.map(r => r.menu_path) })
+})
+
+// 保存某角色的菜单配置（body: { paths: string[] }）
+router.put('/role/:code/menus', (req, res) => {
+  const { code } = req.params
+  const { paths } = req.body || {}
+  if (!Array.isArray(paths)) return res.status(400).json({ message: 'paths 必须为数组' })
+  const validSet = new Set(ALL_PATHS)
+  const toInsert = paths.filter(p => validSet.has(p))
+  db.prepare('DELETE FROM role_menu WHERE role_code = ?').run(code)
+  const insert = db.prepare('INSERT INTO role_menu (role_code, menu_path) VALUES (?, ?)')
+  for (const p of toInsert) insert.run(code, p)
+  res.json({ ok: true, count: toInsert.length })
 })
 
 router.get('/log', (req, res) => {

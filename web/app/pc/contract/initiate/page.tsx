@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -41,88 +41,95 @@ import {
   Calendar,
   AlertCircle,
 } from "lucide-react"
+import { api } from "@/lib/api"
 
-const unsignedPersonnel = [
-  {
-    id: "EMP003",
-    name: "王五",
-    project: "项目B-装修工程",
-    team: "抹灰班组",
-    position: "抹灰工",
-    status: "已实名",
-    entryDate: "2024-03-01",
-  },
-  {
-    id: "EMP006",
-    name: "孙八",
-    project: "项目A-主体工程",
-    team: "钢筋班组",
-    position: "钢筋工",
-    status: "已实名",
-    entryDate: "2024-03-02",
-  },
-  {
-    id: "EMP007",
-    name: "周九",
-    project: "项目C-基建工程",
-    team: "混凝土班组",
-    position: "混凝土工",
-    status: "已实名",
-    entryDate: "2024-03-03",
-  },
-  {
-    id: "EMP008",
-    name: "吴十",
-    project: "项目A-主体工程",
-    team: "木工班组",
-    position: "木工",
-    status: "已实名",
-    entryDate: "2024-03-04",
-  },
-  {
-    id: "EMP009",
-    name: "郑十一",
-    project: "项目B-装修工程",
-    team: "水电班组",
-    position: "电工",
-    status: "已实名",
-    entryDate: "2024-03-05",
-  },
-]
+interface PersonItem {
+  id: number
+  work_no?: string
+  name: string
+  org_name?: string
+  status?: string
+  created_at?: string
+}
 
-const pendingTasks = [
-  {
-    id: "TASK001",
-    template: "劳动合同-标准版",
-    targetType: "batch",
-    targetCount: 15,
-    project: "项目A-主体工程",
-    deadline: "2024-03-15",
-    status: "pending",
-    createTime: "2024-03-01",
-  },
-  {
-    id: "TASK002",
-    template: "安全责任书",
-    targetType: "project",
-    targetCount: 856,
-    project: "项目A-主体工程",
-    deadline: "2024-03-20",
-    status: "in_progress",
-    createTime: "2024-02-28",
-  },
-]
+interface TemplateItem {
+  id: number
+  name: string
+}
+
+interface ContractStatusItem {
+  id: number
+  title?: string
+  person_name?: string
+  status?: string
+  deadline?: string
+}
 
 export default function ContractInitiatePage() {
-  const [selectedPersonnel, setSelectedPersonnel] = useState<string[]>([])
+  const [selectedPersonnel, setSelectedPersonnel] = useState<number[]>([])
   const [isInitiateOpen, setIsInitiateOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
+  const [unsignedList, setUnsignedList] = useState<PersonItem[]>([])
+  const [templates, setTemplates] = useState<TemplateItem[]>([])
+  const [pendingTasks, setPendingTasks] = useState<ContractStatusItem[]>([])
+  const [templateId, setTemplateId] = useState<string>("")
+  const [title, setTitle] = useState("")
+  const [deadline, setDeadline] = useState("")
+  const [orgId, setOrgId] = useState("all")
+  const [isLaunching, setIsLaunching] = useState(false)
+  const [orgList, setOrgList] = useState<{ id: number; name: string }[]>([])
 
-  const filteredPersonnel = unsignedPersonnel.filter(
-    (person) =>
-      person.name.includes(searchTerm) ||
-      person.id.includes(searchTerm) ||
-      person.project.includes(searchTerm)
+  const fetchOrg = useCallback(async () => {
+    try {
+      const { tree } = await api<{ tree: { id: number; name: string; children?: unknown[] }[] }>("/api/sys/org")
+      const flatten = (nodes: { id: number; name: string; children?: unknown[] }[]): { id: number; name: string }[] => {
+        const out: { id: number; name: string }[] = []
+        nodes.forEach((n) => {
+          out.push({ id: n.id, name: n.name })
+          if (n.children?.length) out.push(...flatten(n.children as { id: number; name: string; children?: unknown[] }[]))
+        })
+        return out
+      }
+      setOrgList(flatten(tree ?? []))
+    } catch { setOrgList([]) }
+  }, [])
+
+  const fetchUnsigned = useCallback(async () => {
+    try {
+      const q: Record<string, string> = { contract_signed: "0", pageSize: "100" }
+      if (orgId !== "all") q.org_id = orgId
+      const res = await api<{ list: PersonItem[] }>("/api/person/archive", { query: q })
+      setUnsignedList(res.list ?? [])
+    } catch { setUnsignedList([]) }
+  }, [orgId])
+
+  const fetchTemplates = useCallback(async () => {
+    try {
+      const res = await api<{ list: TemplateItem[] }>("/api/contract/template")
+      setTemplates(res.list ?? [])
+    } catch { setTemplates([]) }
+  }, [])
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const res = await api<{ list: ContractStatusItem[]; total: number }>("/api/contract/status", {
+        query: { status: "待签署", pageSize: "50" },
+      })
+      setPendingTasks(res.list ?? [])
+    } catch { setPendingTasks([]) }
+  }, [])
+
+  useEffect(() => { fetchOrg() }, [fetchOrg])
+  useEffect(() => { fetchUnsigned() }, [fetchUnsigned])
+  useEffect(() => { fetchTemplates() }, [fetchTemplates])
+  useEffect(() => { fetchStatus() }, [fetchStatus])
+
+  const filteredPersonnel = unsignedList.filter(
+    (p) =>
+      (p.name ?? "").includes(searchTerm) ||
+      String(p.id).includes(searchTerm) ||
+      (p.work_no ?? "").includes(searchTerm) ||
+      (p.org_name ?? "").includes(searchTerm)
   )
 
   const toggleSelectAll = () => {
@@ -133,10 +140,33 @@ export default function ContractInitiatePage() {
     }
   }
 
-  const toggleSelect = (id: string) => {
+  const toggleSelect = (id: number) => {
     setSelectedPersonnel((prev) =>
       prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
     )
+  }
+
+  const handleLaunch = async () => {
+    if (selectedPersonnel.length === 0) return
+    setIsLaunching(true)
+    try {
+      await api("/api/contract/launch", {
+        method: "POST",
+        body: {
+          template_id: templateId ? parseInt(templateId, 10) : undefined,
+          title: title || "合同签约",
+          person_ids: selectedPersonnel,
+          deadline: deadline || undefined,
+        },
+      })
+      setIsInitiateOpen(false)
+      setSelectedPersonnel([])
+      setTitle("")
+      setDeadline("")
+      fetchUnsigned()
+      fetchStatus()
+    } catch (e) { console.error(e) }
+    setIsLaunching(false)
   }
 
   return (
@@ -158,7 +188,7 @@ export default function ContractInitiatePage() {
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">待签约人员</p>
-                <p className="text-2xl font-bold">212</p>
+                <p className="text-2xl font-bold">{unsignedList.length}</p>
               </div>
             </div>
           </CardContent>
@@ -171,7 +201,7 @@ export default function ContractInitiatePage() {
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">进行中任务</p>
-                <p className="text-2xl font-bold">8</p>
+                <p className="text-2xl font-bold">{pendingTasks.length}</p>
               </div>
             </div>
           </CardContent>
@@ -183,8 +213,8 @@ export default function ContractInitiatePage() {
                 <FileText className="h-5 w-5 text-accent" />
               </div>
               <div>
-                <p className="text-sm font-medium text-muted-foreground">本月已发起</p>
-                <p className="text-2xl font-bold">156</p>
+                <p className="text-sm font-medium text-muted-foreground">待签合同</p>
+                <p className="text-2xl font-bold">{pendingTasks.length}</p>
               </div>
             </div>
           </CardContent>
@@ -197,7 +227,7 @@ export default function ContractInitiatePage() {
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">即将到期</p>
-                <p className="text-2xl font-bold">32</p>
+                <p className="text-2xl font-bold">{pendingTasks.filter((t) => t.deadline).length}</p>
               </div>
             </div>
           </CardContent>
@@ -239,15 +269,15 @@ export default function ContractInitiatePage() {
                     className="pl-9"
                   />
                 </div>
-                <Select>
+                <Select value={orgId} onValueChange={setOrgId}>
                   <SelectTrigger className="w-40">
                     <SelectValue placeholder="选择项目" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">全部项目</SelectItem>
-                    <SelectItem value="projectA">项目A-主体工程</SelectItem>
-                    <SelectItem value="projectB">项目B-装修工程</SelectItem>
-                    <SelectItem value="projectC">项目C-基建工程</SelectItem>
+                    {orgList.map((o) => (
+                      <SelectItem key={o.id} value={String(o.id)}>{o.name}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <Button variant="outline" size="icon">
@@ -281,21 +311,16 @@ export default function ContractInitiatePage() {
                           onCheckedChange={() => toggleSelect(person.id)}
                         />
                       </TableCell>
-                      <TableCell className="font-medium">{person.id}</TableCell>
+                      <TableCell className="font-medium">{person.work_no ?? person.id}</TableCell>
                       <TableCell>{person.name}</TableCell>
-                      <TableCell>{person.project}</TableCell>
-                      <TableCell>
-                        <div>
-                          <p className="text-sm">{person.team}</p>
-                          <p className="text-xs text-muted-foreground">{person.position}</p>
-                        </div>
-                      </TableCell>
+                      <TableCell>{person.org_name ?? "-"}</TableCell>
+                      <TableCell>-</TableCell>
                       <TableCell>
                         <Badge variant="outline" className="bg-chart-3/10 text-chart-3 border-chart-3/20">
-                          {person.status}
+                          {person.status ?? "已实名"}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{person.entryDate}</TableCell>
+                      <TableCell className="text-muted-foreground">{person.created_at?.slice(0, 10) ?? "-"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -314,50 +339,26 @@ export default function ContractInitiatePage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>任务ID</TableHead>
-                    <TableHead>合同模板</TableHead>
-                    <TableHead>发起类型</TableHead>
-                    <TableHead>目标人数</TableHead>
-                    <TableHead>所属项目</TableHead>
+                    <TableHead>合同ID</TableHead>
+                    <TableHead>标题</TableHead>
+                    <TableHead>签约人</TableHead>
+                    <TableHead>工号</TableHead>
                     <TableHead>截止日期</TableHead>
                     <TableHead>状态</TableHead>
-                    <TableHead className="text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {pendingTasks.map((task) => (
                     <TableRow key={task.id}>
                       <TableCell className="font-medium">{task.id}</TableCell>
-                      <TableCell>{task.template}</TableCell>
+                      <TableCell>{task.title ?? "-"}</TableCell>
+                      <TableCell>{task.person_name ?? "-"}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm">-</TableCell>
+                      <TableCell>{task.deadline ?? "-"}</TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-1">
-                          {task.targetType === "batch" ? (
-                            <Users className="h-4 w-4 text-muted-foreground" />
-                          ) : (
-                            <Building2 className="h-4 w-4 text-muted-foreground" />
-                          )}
-                          <span>{task.targetType === "batch" ? "批量发起" : "按项目"}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>{task.targetCount}人</TableCell>
-                      <TableCell>{task.project}</TableCell>
-                      <TableCell>{task.deadline}</TableCell>
-                      <TableCell>
-                        <Badge
-                          variant="outline"
-                          className={
-                            task.status === "in_progress"
-                              ? "bg-primary/10 text-primary border-primary/20"
-                              : "bg-muted text-muted-foreground"
-                          }
-                        >
-                          {task.status === "in_progress" ? "进行中" : "待处理"}
+                        <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">
+                          {task.status ?? "待签署"}
                         </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="sm">
-                          查看详情
-                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -379,46 +380,36 @@ export default function ContractInitiatePage() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>合同模板</Label>
-              <Select>
+              <Label>合同标题</Label>
+              <Input placeholder="合同签约" value={title} onChange={(e) => setTitle(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>合同模板（选填）</Label>
+              <Select value={templateId} onValueChange={setTemplateId}>
                 <SelectTrigger>
                   <SelectValue placeholder="选择合同模板" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="labor">劳动合同-标准版</SelectItem>
-                  <SelectItem value="dispatch">劳务派遣合同</SelectItem>
-                  <SelectItem value="temporary">临时用工协议</SelectItem>
+                  <SelectItem value="">无</SelectItem>
+                  {templates.map((t) => (
+                    <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>签约截止日期</Label>
-              <Input type="date" />
-            </div>
-            <div className="space-y-2">
-              <Label>逾期提醒</Label>
-              <Select>
-                <SelectTrigger>
-                  <SelectValue placeholder="选择提醒时间" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">提前1天提醒</SelectItem>
-                  <SelectItem value="3">提前3天提醒</SelectItem>
-                  <SelectItem value="7">提前7天提醒</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label>签约截止日期（选填）</Label>
+              <Input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
             </div>
             <div className="rounded-lg bg-muted/50 p-3">
               <p className="text-sm text-muted-foreground">
-                签约任务将通过短信和微信推送通知相关人员，请确保人员手机号信息准确。
+                签约任务将通过站内通知推送相关人员。
               </p>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsInitiateOpen(false)}>
-              取消
-            </Button>
-            <Button onClick={() => setIsInitiateOpen(false)}>确认发起</Button>
+            <Button variant="outline" onClick={() => setIsInitiateOpen(false)}>取消</Button>
+            <Button onClick={handleLaunch} disabled={isLaunching}>{isLaunching ? "发起中..." : "确认发起"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

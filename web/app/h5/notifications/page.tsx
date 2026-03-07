@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -19,6 +19,7 @@ import {
   ChevronRight,
   BellOff,
 } from "lucide-react"
+import { apiWorker } from "@/lib/api"
 
 interface Notification {
   id: string
@@ -30,57 +31,25 @@ interface Notification {
   important?: boolean
 }
 
-const notifications: Notification[] = [
-  {
-    id: "1",
-    type: "contract",
-    title: "新合同待签署",
-    content: "您有一份2024年度劳动合同需要签署，请尽快完成",
-    time: "10分钟前",
-    read: false,
-    important: true,
-  },
-  {
-    id: "2",
-    type: "salary",
-    title: "工资已发放",
-    content: "您3月份的工资￥8,500已发放至工资卡，请注意查收",
-    time: "1小时前",
-    read: false,
-  },
-  {
-    id: "3",
-    type: "attendance",
-    title: "考勤提醒",
-    content: "今日尚未完成下班打卡，请记得打卡",
-    time: "今天 17:30",
-    read: false,
-  },
-  {
-    id: "4",
-    type: "system",
-    title: "系统维护通知",
-    content: "系统将于本周六凌晨2:00-4:00进行维护升级",
-    time: "昨天 15:00",
-    read: true,
-  },
-  {
-    id: "5",
-    type: "contract",
-    title: "合同即将到期",
-    content: "您的劳动合同将于30天后到期，请联系管理人员续签",
-    time: "3天前",
-    read: true,
-  },
-  {
-    id: "6",
-    type: "salary",
-    title: "2月工资已发放",
-    content: "您2月份的工资￥8,200已发放至工资卡",
-    time: "2024-03-01",
-    read: true,
-  },
-]
+function mapType(t: string): "contract" | "salary" | "attendance" | "system" {
+  if (t === "合同待签" || t === "contract") return "contract"
+  if (t === "工资发放" || t === "结算待确认" || t === "salary") return "salary"
+  if (t === "attendance" || t === "考勤") return "attendance"
+  return "system"
+}
+
+function formatTime(created_at?: string) {
+  if (!created_at) return ""
+  const d = new Date(created_at)
+  const now = new Date()
+  const diff = (now.getTime() - d.getTime()) / 60000
+  if (diff < 60) return "刚刚"
+  if (diff < 1440) return `${Math.floor(diff / 60)}分钟前`
+  if (diff < 2880) return "昨天"
+  if (diff < 4320) return "前天"
+  if (diff < 86400) return `${Math.floor(diff / 1440)}天前`
+  return d.toLocaleDateString("zh-CN")
+}
 
 const typeConfig = {
   contract: {
@@ -106,20 +75,46 @@ const typeConfig = {
 }
 
 export default function NotificationsPage() {
-  const [notificationList, setNotificationList] = useState(notifications)
+  const [notificationList, setNotificationList] = useState<Notification[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const loadList = useCallback(async () => {
+    try {
+      const res = await apiWorker<{ list: { id: number; type?: string; title?: string; body?: string; read_at?: string | null; created_at?: string }[] }>("/api/notify/list")
+      const list = (res.list || []).map((n) => ({
+        id: String(n.id),
+        type: mapType(n.type ?? ""),
+        title: n.title ?? "",
+        content: n.body ?? "",
+        time: formatTime(n.created_at),
+        read: !!n.read_at,
+      }))
+      setNotificationList(list)
+    } catch {
+      setNotificationList([])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadList()
+  }, [loadList])
   
   const unreadCount = notificationList.filter((n) => !n.read).length
   const unreadNotifications = notificationList.filter((n) => !n.read)
   const readNotifications = notificationList.filter((n) => n.read)
 
-  const markAsRead = (id: string) => {
-    setNotificationList((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
-    )
+  const markAsRead = async (id: string) => {
+    setNotificationList((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)))
+    try {
+      await apiWorker(`/api/notify/${id}/read`, { method: "PUT" })
+    } catch {}
   }
 
-  const markAllAsRead = () => {
+  const markAllAsRead = async () => {
     setNotificationList((prev) => prev.map((n) => ({ ...n, read: true })))
+    await Promise.all(notificationList.filter((n) => !n.read).map((n) => apiWorker(`/api/notify/${n.id}/read`, { method: "PUT" }).catch(() => {})))
   }
 
   const NotificationItem = ({ notification }: { notification: Notification }) => {

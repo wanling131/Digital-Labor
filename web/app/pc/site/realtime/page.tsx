@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -25,13 +25,18 @@ import {
   AlertCircle,
   CheckCircle2,
 } from "lucide-react"
+import { api } from "@/lib/api"
 
-const projectStats = [
-  { name: "项目A-主体工程", total: 856, present: 798, absent: 58, rate: 93.2 },
-  { name: "项目B-装修工程", total: 642, present: 612, absent: 30, rate: 95.3 },
-  { name: "项目C-基建工程", total: 534, present: 489, absent: 45, rate: 91.6 },
-  { name: "项目D-市政工程", total: 489, present: 467, absent: 22, rate: 95.5 },
-]
+interface SiteBoardProject {
+  org_id: number
+  org_name: string
+  count: number
+}
+
+interface SiteBoardRes {
+  projects: SiteBoardProject[]
+  total: number
+}
 
 const realtimeWorkers = [
   { id: "1", name: "李明", team: "钢筋班组", project: "项目A", clockIn: "08:32", location: "A区3楼", status: "working" },
@@ -53,25 +58,49 @@ const statusConfig = {
 export default function RealtimePage() {
   const [lastUpdate, setLastUpdate] = useState(new Date())
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [board, setBoard] = useState<SiteBoardRes | null>(null)
 
-  const handleRefresh = () => {
+  const fetchBoard = useCallback(async () => {
+    try {
+      const res = await api<SiteBoardRes>("/api/site/board")
+      setBoard(res)
+    } catch {
+      setBoard({ projects: [], total: 0 })
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchBoard()
+  }, [fetchBoard])
+
+  const handleRefresh = async () => {
     setIsRefreshing(true)
-    setTimeout(() => {
-      setLastUpdate(new Date())
-      setIsRefreshing(false)
-    }, 1000)
+    await fetchBoard()
+    setLastUpdate(new Date())
+    setIsRefreshing(false)
   }
 
   // 自动刷新
   useEffect(() => {
     const timer = setInterval(() => {
+      fetchBoard()
       setLastUpdate(new Date())
     }, 30000)
     return () => clearInterval(timer)
-  }, [])
+  }, [fetchBoard])
 
-  const totalPresent = projectStats.reduce((sum, p) => sum + p.present, 0)
-  const totalWorkers = projectStats.reduce((sum, p) => sum + p.total, 0)
+  const projectStats = board
+    ? board.projects.map((p) => ({
+        id: p.org_id,
+        name: p.org_name || `组织${p.org_id}`,
+        total: p.count,
+        present: p.count,
+        absent: 0,
+        rate: 100,
+      }))
+    : []
+  const totalPresent = board?.total ?? 0
+  const totalWorkers = board?.total ?? 0
 
   return (
     <div className="space-y-6">
@@ -134,7 +163,7 @@ export default function RealtimePage() {
               <div>
                 <p className="text-sm text-muted-foreground">平均在岗率</p>
                 <p className="text-3xl font-bold text-green-500">
-                  {((totalPresent / totalWorkers) * 100).toFixed(1)}%
+                  {totalWorkers > 0 ? ((totalPresent / totalWorkers) * 100).toFixed(1) : 0}%
                 </p>
               </div>
               <CheckCircle2 className="h-10 w-10 text-green-500/50" />
@@ -147,7 +176,7 @@ export default function RealtimePage() {
               <div>
                 <p className="text-sm text-muted-foreground">缺勤人数</p>
                 <p className="text-3xl font-bold text-destructive">
-                  {projectStats.reduce((sum, p) => sum + p.absent, 0)}
+                  {0}
                 </p>
               </div>
               <AlertCircle className="h-10 w-10 text-destructive/50" />
@@ -164,8 +193,8 @@ export default function RealtimePage() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {projectStats.map((project, index) => (
-              <div key={index} className="space-y-2">
+            {projectStats.map((project) => (
+              <div key={project.id} className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="font-medium">{project.name}</span>
                   <div className="flex items-center gap-4 text-sm">
@@ -208,10 +237,9 @@ export default function RealtimePage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部项目</SelectItem>
-                  <SelectItem value="a">项目A</SelectItem>
-                  <SelectItem value="b">项目B</SelectItem>
-                  <SelectItem value="c">项目C</SelectItem>
-                  <SelectItem value="d">项目D</SelectItem>
+                  {projectStats.map((p) => (
+                    <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

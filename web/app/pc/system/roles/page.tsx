@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -48,6 +48,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion"
+import { api } from "@/lib/api"
 
 interface Role {
   id: string
@@ -58,63 +59,6 @@ interface Role {
   createdAt: string
   status: "active" | "inactive"
 }
-
-const mockRoles: Role[] = [
-  {
-    id: "1",
-    name: "超级管理员",
-    description: "拥有系统所有功能的访问权限",
-    userCount: 3,
-    permissions: ["all"],
-    createdAt: "2024-01-01",
-    status: "active",
-  },
-  {
-    id: "2",
-    name: "项目经理",
-    description: "管理项目人员、考勤、合同等",
-    userCount: 15,
-    permissions: ["personnel", "contract", "attendance", "settlement"],
-    createdAt: "2024-01-15",
-    status: "active",
-  },
-  {
-    id: "3",
-    name: "人事专员",
-    description: "管理人员档案、认证资质等",
-    userCount: 8,
-    permissions: ["personnel"],
-    createdAt: "2024-02-01",
-    status: "active",
-  },
-  {
-    id: "4",
-    name: "财务人员",
-    description: "处理结算、薪资报表等",
-    userCount: 5,
-    permissions: ["settlement", "report"],
-    createdAt: "2024-02-15",
-    status: "active",
-  },
-  {
-    id: "5",
-    name: "考勤员",
-    description: "管理考勤数据录入和审核",
-    userCount: 12,
-    permissions: ["attendance"],
-    createdAt: "2024-03-01",
-    status: "active",
-  },
-  {
-    id: "6",
-    name: "只读用户",
-    description: "仅可查看数据，无操作权限",
-    userCount: 25,
-    permissions: ["view"],
-    createdAt: "2024-03-15",
-    status: "active",
-  },
-]
 
 const permissionModules = [
   {
@@ -181,6 +125,27 @@ const permissionModules = [
 export default function RolesPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([])
+  const [roles, setRoles] = useState<Role[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    api<{ list: { code: string; name: string; desc: string; userCount: number }[] }>("/api/sys/role")
+      .then((res) => {
+        setRoles(
+          (res.list || []).map((r) => ({
+            id: r.code,
+            name: r.name,
+            description: r.desc || "",
+            userCount: r.userCount ?? 0,
+            permissions: [],
+            createdAt: "",
+            status: "active" as const,
+          }))
+        )
+      })
+      .catch(() => setRoles([]))
+      .finally(() => setLoading(false))
+  }, [])
 
   const togglePermission = (permissionId: string) => {
     setSelectedPermissions((prev) =>
@@ -299,7 +264,7 @@ export default function RolesPage() {
             <Shield className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{mockRoles.length}</div>
+            <div className="text-2xl font-bold">{roles.length}</div>
             <p className="text-xs text-muted-foreground">系统角色</p>
           </CardContent>
         </Card>
@@ -310,7 +275,7 @@ export default function RolesPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {mockRoles.reduce((acc, role) => acc + role.userCount, 0)}
+              {roles.reduce((acc, role) => acc + role.userCount, 0)}
             </div>
             <p className="text-xs text-muted-foreground">已分配角色</p>
           </CardContent>
@@ -370,7 +335,7 @@ export default function RolesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {mockRoles.map((role) => (
+              {roles.map((role) => (
                 <TableRow key={role.id}>
                   <TableCell>
                     <div className="flex items-center gap-2">

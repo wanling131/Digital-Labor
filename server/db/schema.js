@@ -22,9 +22,15 @@ db.exec(`
     name TEXT NOT NULL,
     type TEXT NOT NULL,
     sort INTEGER DEFAULT 0,
+    manager TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   )
 `)
+;(function addManagerColumn() {
+  const cols = db.prepare("PRAGMA table_info(org)").all()
+  if (cols.some((c) => c.name === 'manager')) return
+  db.exec("ALTER TABLE org ADD COLUMN manager TEXT")
+})()
 
 // 管理端登录账号（管理员、业务员等）
 db.exec(`
@@ -40,7 +46,7 @@ db.exec(`
   )
 `)
 
-// 工人档案：状态流转 预注册→已实名→已签约→已进场→已离场；contract_signed=是否已签合同，on_site=是否在岗
+// 工人档案：状态流转 预注册→已实名→已签约→已进场→已离场；contract_signed=是否已签合同，on_site=是否在岗；auth_review_status=人工审核状态
 db.exec(`
   CREATE TABLE IF NOT EXISTS person (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,10 +58,44 @@ db.exec(`
     status TEXT DEFAULT '预注册',
     contract_signed INTEGER DEFAULT 0,
     on_site INTEGER DEFAULT 0,
+    auth_review_status TEXT DEFAULT 'pending',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   )
 `)
+;(function addAuthReviewColumn() {
+  const cols = db.prepare("PRAGMA table_info(person)").all()
+  if (cols.some((c) => c.name === 'auth_review_status')) return
+  db.exec("ALTER TABLE person ADD COLUMN auth_review_status TEXT DEFAULT 'pending'")
+})()
+
+// 添加人脸验证相关字段
+;(function addFaceVerifyColumns() {
+  const cols = db.prepare("PRAGMA table_info(person)").all()
+  
+  // 添加 face_verified 字段
+  if (!cols.some((c) => c.name === 'face_verified')) {
+    db.exec("ALTER TABLE person ADD COLUMN face_verified INTEGER DEFAULT 0")
+  }
+  
+  // 添加 face_verified_at 字段
+  if (!cols.some((c) => c.name === 'face_verified_at')) {
+    db.exec("ALTER TABLE person ADD COLUMN face_verified_at TEXT")
+  }
+  
+  // 添加 face_image_url 字段（存储人脸图片URL）
+  if (!cols.some((c) => c.name === 'face_image_url')) {
+    db.exec("ALTER TABLE person ADD COLUMN face_image_url TEXT")
+  }
+})()
+
+// 添加银行卡字段
+;(function addBankCardColumn() {
+  const cols = db.prepare("PRAGMA table_info(person)").all()
+  if (!cols.some((c) => c.name === 'bank_card')) {
+    db.exec("ALTER TABLE person ADD COLUMN bank_card TEXT")
+  }
+})()
 
 // 考勤记录：人员、日期、上班/下班、工时、项目/班组
 db.exec(`
@@ -94,9 +134,18 @@ db.exec(`
     deadline TEXT,
     signed_at TEXT,
     pdf_path TEXT,
+    flow_id TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   )
 `)
+
+// 添加flow_id字段（如果还不存在）
+;(function addFlowIdColumn() {
+  const cols = db.prepare("PRAGMA table_info(contract_instance)").all()
+  if (!cols.some((c) => c.name === 'flow_id')) {
+    db.exec("ALTER TABLE contract_instance ADD COLUMN flow_id TEXT")
+  }
+})()
 
 // 结算单：人员、周期、工时汇总、应发、已发、状态
 db.exec(`
@@ -128,6 +177,15 @@ db.exec(`
   )
 `)
 
+// 角色-菜单（可配置：某角色可见的菜单 path 列表，与前端 /pc 路由一致）
+db.exec(`
+  CREATE TABLE IF NOT EXISTS role_menu (
+    role_code TEXT NOT NULL,
+    menu_path TEXT NOT NULL,
+    PRIMARY KEY (role_code, menu_path)
+  )
+`)
+
 // 操作日志
 db.exec(`
   CREATE TABLE IF NOT EXISTS op_log (
@@ -148,18 +206,30 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_person_status ON person(status)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_person_on_site ON person(on_site)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_attendance_work_date ON attendance(work_date)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_attendance_person_id ON attendance(person_id)`)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date)`)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_attendance_person_date ON attendance(person_id, date)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_contract_instance_status ON contract_instance(status)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_contract_instance_person ON contract_instance(person_id)`)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_contract_instance_flow_id ON contract_instance(flow_id)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_settlement_person_status ON settlement(person_id, status)`)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_settlement_period ON settlement(period_start, period_end)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_notification_person_id ON notification(person_id)`)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_notification_created_at ON notification(created_at)`)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_person_org_id ON person(org_id)`)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_person_work_no ON person(work_no)`)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_person_face_verified ON person(face_verified)`)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_salary_person_period ON salary(person_id, period)`)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_worker_attendance_person_date ON worker_attendance(person_id, date)`)
 
-// 默认管理员（密码 admin123，实际应 bcrypt，此处简化）
-const defaultHash = 'admin123'
+// 默认管理员（密码 123456，与登录页演示账号一致；实际生产建议改为 bcrypt）
+const defaultHash = '123456'
 try {
   db.prepare("INSERT INTO user (username, password_hash, name, role) VALUES (?, ?, ?, ?)").run('admin', defaultHash, '管理员', 'admin')
 } catch (e) {
   if (!e.message.includes('UNIQUE')) throw e
 }
+// 保证已有库中 admin 密码与演示一致（便于首次体验）
+db.prepare("UPDATE user SET password_hash = ? WHERE username = 'admin'").run(defaultHash)
 
 export function initDb() {
   return db

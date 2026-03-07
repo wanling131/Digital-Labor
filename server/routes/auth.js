@@ -5,11 +5,12 @@ import { Router } from 'express'
 import { db } from '../db/index.js'
 import { signToken } from '../middleware/auth.js'
 import { err } from '../lib/response.js'
+import { loginRateLimit } from '../middleware/rateLimit.js'
 
 const router = Router()
 
-// 管理端：用户名 + 密码
-router.post('/login', (req, res) => {
+// 管理端：用户名 + 密码（应用登录限流）
+router.post('/login', loginRateLimit, (req, res) => {
   const { username, password } = req.body || {}
   const u = (username != null && typeof username === 'string') ? username.trim() : ''
   const p = (password != null && typeof password === 'string') ? password : ''
@@ -20,8 +21,8 @@ router.post('/login', (req, res) => {
   res.json({ token, user: { id: row.id, username: row.username, name: row.name, role: row.role } })
 })
 
-// 工人端简易登录：工号+姓名 或 person_id（mock，生产接微信等）
-router.post('/worker-login', (req, res) => {
+// 工人端简易登录：工号+姓名 或 person_id（mock，生产接微信等，应用登录限流）
+router.post('/worker-login', loginRateLimit, (req, res) => {
   const { person_id, work_no, name } = req.body || {}
   let personId = person_id ? parseInt(person_id, 10) : null
   if (!personId && (work_no || name)) {

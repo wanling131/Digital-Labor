@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -43,6 +43,7 @@ import {
 } from "lucide-react"
 import { format } from "date-fns"
 import { zhCN } from "date-fns/locale"
+import { api } from "@/lib/api"
 
 interface LogEntry {
   id: string
@@ -57,122 +58,20 @@ interface LogEntry {
   details?: string
 }
 
-const mockLogs: LogEntry[] = [
-  {
-    id: "1",
-    user: "张三",
-    role: "超级管理员",
-    action: "登录",
-    module: "系统",
-    target: "后台管理系统",
-    ip: "192.168.1.100",
-    timestamp: "2024-03-15 09:00:15",
-    status: "success",
-  },
-  {
-    id: "2",
-    user: "李明",
-    role: "项目经理",
-    action: "新增",
-    module: "人员档案",
-    target: "工人-王建国",
-    ip: "192.168.1.105",
-    timestamp: "2024-03-15 09:15:32",
-    status: "success",
-    details: "新增工人信息，工种：木工",
-  },
-  {
-    id: "3",
-    user: "王芳",
-    role: "人事专员",
-    action: "编辑",
-    module: "人员档案",
-    target: "工人-刘强",
-    ip: "192.168.1.110",
-    timestamp: "2024-03-15 09:30:45",
-    status: "success",
-    details: "更新联系电话",
-  },
-  {
-    id: "4",
-    user: "陈刚",
-    role: "财务人员",
-    action: "导出",
-    module: "结算管理",
-    target: "2024年3月结算单",
-    ip: "192.168.1.115",
-    timestamp: "2024-03-15 10:00:00",
-    status: "success",
-  },
-  {
-    id: "5",
-    user: "赵磊",
-    role: "考勤员",
-    action: "导入",
-    module: "考勤管理",
-    target: "3月考勤数据",
-    ip: "192.168.1.120",
-    timestamp: "2024-03-15 10:15:20",
-    status: "failed",
-    details: "文件格式错误",
-  },
-  {
-    id: "6",
-    user: "张三",
-    role: "超级管理员",
-    action: "删除",
-    module: "合同管理",
-    target: "合同模板-临时用工协议",
-    ip: "192.168.1.100",
-    timestamp: "2024-03-15 10:30:00",
-    status: "success",
-  },
-  {
-    id: "7",
-    user: "李明",
-    role: "项目经理",
-    action: "审核",
-    module: "考勤管理",
-    target: "华东项目部-2024年3月考勤",
-    ip: "192.168.1.105",
-    timestamp: "2024-03-15 11:00:00",
-    status: "success",
-  },
-  {
-    id: "8",
-    user: "王芳",
-    role: "人事专员",
-    action: "发起",
-    module: "合同管理",
-    target: "批量签约-15人",
-    ip: "192.168.1.110",
-    timestamp: "2024-03-15 11:30:00",
-    status: "success",
-  },
-  {
-    id: "9",
-    user: "张三",
-    role: "超级管理员",
-    action: "配置",
-    module: "系统管理",
-    target: "角色权限-项目经理",
-    ip: "192.168.1.100",
-    timestamp: "2024-03-15 14:00:00",
-    status: "success",
-    details: "新增考勤审核权限",
-  },
-  {
-    id: "10",
-    user: "陈刚",
-    role: "财务人员",
-    action: "退出",
-    module: "系统",
-    target: "后台管理系统",
-    ip: "192.168.1.115",
-    timestamp: "2024-03-15 18:00:00",
-    status: "success",
-  },
-]
+function mapLogRow(row: { id: number; username?: string; module?: string; action?: string; detail?: string; result?: string; created_at?: string }): LogEntry {
+  return {
+    id: String(row.id),
+    user: row.username ?? "-",
+    role: "",
+    action: row.action ?? "-",
+    module: row.module ?? "-",
+    target: (row.detail ?? "").slice(0, 80) || "-",
+    ip: "-",
+    timestamp: row.created_at ?? "-",
+    status: (row.result === "success" ? "success" : "failed") as "success" | "failed",
+    details: row.detail,
+  }
+}
 
 const actionIcons: Record<string, React.ReactNode> = {
   "登录": <LogIn className="h-4 w-4 text-primary" />,
@@ -192,8 +91,33 @@ export default function LogsPage() {
   const [dateRange, setDateRange] = useState<Date>()
   const [moduleFilter, setModuleFilter] = useState<string>("all")
   const [actionFilter, setActionFilter] = useState<string>("all")
+  const [logs, setLogs] = useState<LogEntry[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const pageSize = 20
+  const [loading, setLoading] = useState(true)
 
-  const filteredLogs = mockLogs.filter((log) => {
+  const loadLogs = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await api<{ list: unknown[]; total: number }>("/api/sys/log", {
+        query: { page, pageSize },
+      })
+      setLogs((res.list || []).map((row: Record<string, unknown>) => mapLogRow(row as Parameters<typeof mapLogRow>[0])))
+      setTotal(res.total ?? 0)
+    } catch {
+      setLogs([])
+      setTotal(0)
+    } finally {
+      setLoading(false)
+    }
+  }, [page])
+
+  useEffect(() => {
+    loadLogs()
+  }, [loadLogs])
+
+  const filteredLogs = logs.filter((log) => {
     const matchesSearch =
       log.user.includes(searchQuery) ||
       log.target.includes(searchQuery) ||
@@ -343,7 +267,20 @@ export default function LogsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredLogs.map((log) => (
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                    加载中...
+                  </TableCell>
+                </TableRow>
+              ) : filteredLogs.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                    暂无日志
+                  </TableCell>
+                </TableRow>
+              ) : (
+              filteredLogs.map((log) => (
                 <TableRow key={log.id}>
                   <TableCell className="text-muted-foreground text-sm">
                     {log.timestamp}
@@ -373,19 +310,30 @@ export default function LogsPage() {
                     </Badge>
                   </TableCell>
                 </TableRow>
-              ))}
+              ))
+              )}
             </TableBody>
           </Table>
 
           <div className="flex items-center justify-between mt-4">
             <p className="text-sm text-muted-foreground">
-              共 {filteredLogs.length} 条记录
+              共 {total} 条记录{filteredLogs.length < total && `，当前页 ${filteredLogs.length} 条`}
             </p>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" disabled>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page <= 1 || loading}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
                 上一页
               </Button>
-              <Button variant="outline" size="sm">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page * pageSize >= total || loading}
+                onClick={() => setPage((p) => p + 1)}
+              >
                 下一页
               </Button>
             </div>

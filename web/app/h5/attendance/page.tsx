@@ -20,16 +20,16 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
+import { apiWorker } from "@/lib/api"
 
-const attendanceRecords = [
-  { date: "03-15", weekday: "周五", clockIn: "08:32", clockOut: "18:15", status: "normal", hours: "9.7" },
-  { date: "03-14", weekday: "周四", clockIn: "08:45", clockOut: "18:30", status: "normal", hours: "9.8" },
-  { date: "03-13", weekday: "周三", clockIn: "09:05", clockOut: "18:20", status: "late", hours: "9.2" },
-  { date: "03-12", weekday: "周二", clockIn: "08:28", clockOut: "18:10", status: "normal", hours: "9.7" },
-  { date: "03-11", weekday: "周一", clockIn: "08:30", clockOut: "17:30", status: "early", hours: "9.0" },
-  { date: "03-08", weekday: "周五", clockIn: "08:35", clockOut: "18:25", status: "normal", hours: "9.8" },
-  { date: "03-07", weekday: "周四", clockIn: "08:40", clockOut: "18:30", status: "normal", hours: "9.8" },
-]
+interface AttRecord {
+  date: string
+  weekday: string
+  clockIn: string
+  clockOut: string
+  status: string
+  hours: string
+}
 
 const statusConfig = {
   normal: { label: "正常", color: "bg-green-100 text-green-700" },
@@ -47,6 +47,36 @@ export default function AttendancePage() {
   const [clockInTime, setClockInTime] = useState("08:32")
   const [clockOutTime, setClockOutTime] = useState("")
   const [showSuccess, setShowSuccess] = useState(false)
+  const [attendanceRecords, setAttendanceRecords] = useState<AttRecord[]>([])
+  const [yearMonth, setYearMonth] = useState({ year: new Date().getFullYear(), month: new Date().getMonth() + 1 })
+
+  const loadAttendance = useCallback(async () => {
+    try {
+      const res = await apiWorker<{ list: { work_date?: string; clock_in?: string; clock_out?: string; hours?: number }[] }>("/api/attendance/my", {
+        query: { year: yearMonth.year, month: yearMonth.month },
+      })
+      const list = (res.list || []).map((a) => {
+        const d = a.work_date ? new Date(a.work_date + "T00:00:00") : new Date()
+        const weekdays = "周日周一周二周三周四周五周六"
+        const w = weekdays.slice(d.getDay() * 2, d.getDay() * 2 + 2)
+        return {
+          date: a.work_date?.slice(5).replace("-", "/") ?? "",
+          weekday: w,
+          clockIn: a.clock_in ?? "--:--",
+          clockOut: a.clock_out ?? "--:--",
+          status: "normal",
+          hours: String(a.hours ?? 0),
+        }
+      })
+      setAttendanceRecords(list)
+    } catch {
+      setAttendanceRecords([])
+    }
+  }, [yearMonth.year, yearMonth.month])
+
+  useEffect(() => {
+    loadAttendance()
+  }, [loadAttendance])
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -56,8 +86,9 @@ export default function AttendancePage() {
   }, [])
 
   const handleRefresh = useCallback(async () => {
-    await new Promise(resolve => setTimeout(resolve, 1000))
-  }, [])
+    await loadAttendance()
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+  }, [loadAttendance])
 
   const handleClockIn = () => {
     setIsLocating(true)
@@ -258,7 +289,10 @@ export default function AttendancePage() {
 
             {/* Records List */}
             <div className="space-y-2">
-              {attendanceRecords.map((record, index) => (
+              {attendanceRecords.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center">暂无考勤记录</p>
+              ) : (
+              attendanceRecords.map((record, index) => (
                 <div
                   key={index}
                   className="flex items-center justify-between py-3 border-b border-border last:border-0"
@@ -287,7 +321,8 @@ export default function AttendancePage() {
                     </Badge>
                   </div>
                 </div>
-              ))}
+              ))
+              )}
             </div>
           </CardContent>
         </Card>

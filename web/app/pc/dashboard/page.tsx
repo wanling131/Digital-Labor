@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -27,69 +28,17 @@ import {
   Cell,
   Legend,
 } from "recharts"
+import { api } from "@/lib/api"
 
-const stats = [
-  {
-    title: "总人数",
-    value: "3,842",
-    change: "+12.5%",
-    trend: "up",
-    icon: Users,
-    color: "bg-primary/10 text-primary",
-  },
-  {
-    title: "实名认证率",
-    value: "96.8%",
-    change: "+2.3%",
-    trend: "up",
-    icon: UserCheck,
-    color: "bg-accent/10 text-accent",
-  },
-  {
-    title: "合同签约率",
-    value: "92.4%",
-    change: "+5.1%",
-    trend: "up",
-    icon: FileCheck,
-    color: "bg-chart-3/10 text-chart-3",
-  },
-  {
-    title: "今日在岗率",
-    value: "87.2%",
-    change: "-1.2%",
-    trend: "down",
-    icon: Clock,
-    color: "bg-chart-5/10 text-chart-5",
-  },
-]
-
-const trendData = [
-  { month: "1月", 入职: 120, 离职: 45, 在岗: 2800 },
-  { month: "2月", 入职: 180, 离职: 62, 在岗: 2918 },
-  { month: "3月", 入职: 220, 离职: 78, 在岗: 3060 },
-  { month: "4月", 入职: 150, 离职: 55, 在岗: 3155 },
-  { month: "5月", 入职: 280, 离职: 92, 在岗: 3343 },
-  { month: "6月", 入职: 310, 离职: 110, 在岗: 3543 },
-  { month: "7月", 入职: 245, 离职: 88, 在岗: 3700 },
-  { month: "8月", 入职: 198, 离职: 56, 在岗: 3842 },
-]
-
-const projectData = [
-  { name: "项目A-主体工程", value: 856, percentage: 22.3 },
-  { name: "项目B-装修工程", value: 642, percentage: 16.7 },
-  { name: "项目C-基建工程", value: 534, percentage: 13.9 },
-  { name: "项目D-市政工程", value: 489, percentage: 12.7 },
-  { name: "项目E-园林工程", value: 421, percentage: 11.0 },
-  { name: "其他项目", value: 900, percentage: 23.4 },
-]
-
-const COLORS = [
-  "oklch(0.55 0.18 250)",
-  "oklch(0.65 0.16 165)",
-  "oklch(0.7 0.15 85)",
-  "oklch(0.6 0.18 330)",
-  "oklch(0.65 0.2 30)",
-  "oklch(0.5 0.1 250)",
+const statsPlaceholder = [
+  { month: "1月", 新增: 120, 签约: 45, 考勤: 2800 },
+  { month: "2月", 新增: 180, 签约: 62, 考勤: 2918 },
+  { month: "3月", 新增: 220, 签约: 78, 考勤: 3060 },
+  { month: "4月", 新增: 150, 签约: 55, 考勤: 3155 },
+  { month: "5月", 新增: 280, 签约: 92, 考勤: 3343 },
+  { month: "6月", 新增: 310, 签约: 110, 考勤: 3543 },
+  { month: "7月", 新增: 245, 签约: 88, 考勤: 3700 },
+  { month: "8月", 新增: 198, 签约: 56, 考勤: 3842 },
 ]
 
 const recentActivities = [
@@ -107,6 +56,58 @@ const alerts = [
 ]
 
 export default function DashboardPage() {
+  const [board, setBoard] = useState<{ total?: number; realNameRate?: string; signRate?: string; onSiteRate?: string } | null>(null)
+  const [trend, setTrend] = useState<{ date: string; personCount: number; signedCount: number; attendanceCount: number; totalHours: number }[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    Promise.all([
+      api<{ total?: number; realNameRate?: string; signRate?: string; onSiteRate?: string }>("/api/data/board"),
+      api<{ trend?: { date: string; personCount: number; signedCount: number; attendanceCount: number; totalHours: number }[] }>("/api/data/board/trend", { query: { days: 30 } }),
+    ])
+      .then(([b, t]) => {
+        setBoard(b)
+        setTrend(t.trend || [])
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  const stats = [
+    { title: "总人数", value: loading ? "—" : (board?.total ?? 0).toLocaleString(), change: "+12.5%", trend: "up" as const, icon: Users, color: "bg-primary/10 text-primary" },
+    { title: "实名认证率", value: loading ? "—" : `${board?.realNameRate ?? 0}%`, change: "+2.3%", trend: "up" as const, icon: UserCheck, color: "bg-accent/10 text-accent" },
+    { title: "合同签约率", value: loading ? "—" : `${board?.signRate ?? 0}%`, change: "+5.1%", trend: "up" as const, icon: FileCheck, color: "bg-chart-3/10 text-chart-3" },
+    { title: "今日在岗率", value: loading ? "—" : `${board?.onSiteRate ?? 0}%`, change: "-1.2%", trend: "down" as const, icon: Clock, color: "bg-chart-5/10 text-chart-5" },
+  ]
+
+  const trendData =
+    trend.length > 0
+      ? trend.map((t) => ({
+          month: t.date.slice(5).replace("-", "/"),
+          新增: t.personCount,
+          签约: t.signedCount,
+          考勤: t.attendanceCount,
+        }))
+      : statsPlaceholder
+
+  const projectData = [
+    { name: "项目A-主体工程", value: 856, percentage: 22.3 },
+    { name: "项目B-装修工程", value: 642, percentage: 16.7 },
+    { name: "项目C-基建工程", value: 534, percentage: 13.9 },
+    { name: "项目D-市政工程", value: 489, percentage: 12.7 },
+    { name: "项目E-园林工程", value: 421, percentage: 11.0 },
+    { name: "其他项目", value: 900, percentage: 23.4 },
+  ]
+
+  const COLORS = [
+    "oklch(0.55 0.18 250)",
+    "oklch(0.65 0.16 165)",
+    "oklch(0.7 0.15 85)",
+    "oklch(0.6 0.18 330)",
+    "oklch(0.65 0.2 30)",
+    "oklch(0.5 0.1 250)",
+  ]
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -221,21 +222,21 @@ export default function DashboardPage() {
                 <Legend />
                 <Area
                   type="monotone"
-                  dataKey="在岗"
+                  dataKey="考勤"
                   stroke="oklch(0.55 0.18 250)"
                   fill="url(#colorOnsite)"
                   strokeWidth={2}
                 />
                 <Area
                   type="monotone"
-                  dataKey="入职"
+                  dataKey="新增"
                   stroke="oklch(0.65 0.16 165)"
                   fill="oklch(0.65 0.16 165 / 0.2)"
                   strokeWidth={2}
                 />
                 <Area
                   type="monotone"
-                  dataKey="离职"
+                  dataKey="签约"
                   stroke="oklch(0.55 0.2 25)"
                   fill="oklch(0.55 0.2 25 / 0.2)"
                   strokeWidth={2}

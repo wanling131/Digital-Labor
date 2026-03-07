@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -51,8 +51,20 @@ import {
   UserCheck,
   UserX,
 } from "lucide-react"
+import { api } from "@/lib/api"
 
-const users = [
+interface UserItem {
+  id: number
+  username: string
+  name?: string
+  org_id?: number
+  org_name?: string
+  role?: string
+  enabled?: number
+  created_at?: string
+}
+
+const usersMock = [
   {
     id: "1",
     name: "张管理",
@@ -104,15 +116,82 @@ const users = [
 ]
 
 const roleColors: Record<string, string> = {
-  "系统管理员": "bg-red-100 text-red-700",
-  "项目经理": "bg-blue-100 text-blue-700",
-  "人事主管": "bg-green-100 text-green-700",
-  "财务人员": "bg-yellow-100 text-yellow-700",
+  admin: "bg-red-100 text-red-700",
+  user: "bg-blue-100 text-blue-700",
 }
 
 export default function UsersPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [showNewDialog, setShowNewDialog] = useState(false)
+  const [list, setList] = useState<UserItem[]>([])
+  const [orgList, setOrgList] = useState<{ id: number; name: string }[]>([])
+  const [editUser, setEditUser] = useState<UserItem | null>(null)
+  const [formUsername, setFormUsername] = useState("")
+  const [formPassword, setFormPassword] = useState("")
+  const [formName, setFormName] = useState("")
+  const [formOrgId, setFormOrgId] = useState<string>("")
+  const [formRole, setFormRole] = useState("admin")
+  const [formEnabled, setFormEnabled] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const fetchList = useCallback(async () => {
+    try {
+      const res = await api<{ list: UserItem[] }>("/api/sys/user")
+      setList(res.list ?? [])
+    } catch { setList([]) }
+  }, [])
+
+  const fetchOrg = useCallback(async () => {
+    try {
+      const { tree } = await api<{ tree: { id: number; name: string; children?: unknown[] }[] }>("/api/sys/org")
+      const flatten = (n: { id: number; name: string; children?: unknown[] }[]): { id: number; name: string }[] => {
+        const out: { id: number; name: string }[] = []
+        n.forEach((x) => { out.push({ id: x.id, name: x.name }); if (x.children?.length) out.push(...flatten(x.children as { id: number; name: string; children?: unknown[] }[])) })
+        return out
+      }
+      setOrgList(flatten(tree ?? []))
+    } catch { setOrgList([]) }
+  }, [])
+
+  useEffect(() => { fetchList() }, [fetchList])
+  useEffect(() => { fetchOrg() }, [fetchOrg])
+
+  const filtered = list.filter((u) =>
+    (u.username ?? "").includes(searchTerm) || (u.name ?? "").includes(searchTerm) || (u.org_name ?? "").includes(searchTerm)
+  )
+
+  const handleCreate = async () => {
+    if (!formUsername || !formPassword) return
+    setIsSubmitting(true)
+    try {
+      await api("/api/sys/user", {
+        method: "POST",
+        body: { username: formUsername, password: formPassword, name: formName || undefined, org_id: formOrgId ? parseInt(formOrgId, 10) : undefined, role: formRole },
+      })
+      setShowNewDialog(false)
+      setFormUsername("")
+      setFormPassword("")
+      setFormName("")
+      setFormOrgId("")
+      fetchList()
+    } catch (e) { console.error(e) }
+    setIsSubmitting(false)
+  }
+
+  const handleUpdate = async () => {
+    if (!editUser) return
+    setIsSubmitting(true)
+    try {
+      await api(`/api/sys/user/${editUser.id}`, {
+        method: "PUT",
+        body: { name: formName || undefined, org_id: formOrgId ? parseInt(formOrgId, 10) : undefined, role: formRole, enabled: formEnabled ? 1 : 0, password: formPassword || undefined },
+      })
+      setEditUser(null)
+      setFormPassword("")
+      fetchList()
+    } catch (e) { console.error(e) }
+    setIsSubmitting(false)
+  }
 
   return (
     <div className="space-y-6">
@@ -121,82 +200,76 @@ export default function UsersPage() {
           <h1 className="text-2xl font-bold text-foreground">用户管理</h1>
           <p className="text-muted-foreground">管理系统用户账号及权限</p>
         </div>
-        <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
+        <Dialog open={showNewDialog} onOpenChange={(o) => { setShowNewDialog(o); if (!o) { setEditUser(null); setFormUsername(""); setFormPassword(""); setFormName(""); setFormOrgId("") } }}>
           <DialogTrigger asChild>
-            <Button className="gap-2">
+            <Button className="gap-2" onClick={() => { setEditUser(null); setFormUsername(""); setFormPassword(""); setFormName(""); setFormOrgId(""); setFormRole("admin") }}>
               <Plus className="h-4 w-4" />
               新增用户
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>新增用户</DialogTitle>
+              <DialogTitle>{editUser ? "编辑用户" : "新增用户"}</DialogTitle>
               <DialogDescription>
-                创建新的系统用户账号
+                {editUser ? "修改用户信息" : "创建新的系统用户账号"}
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label>姓名</Label>
-                  <Input placeholder="请输入姓名" />
+                  <Label>用户名 *</Label>
+                  <Input placeholder="请输入用户名" value={formUsername} onChange={(e) => setFormUsername(e.target.value)} disabled={!!editUser} />
                 </div>
                 <div className="grid gap-2">
-                  <Label>用户名</Label>
-                  <Input placeholder="请输入用户名" />
+                  <Label>密码 {editUser ? "（留空不修改）" : "*"}</Label>
+                  <Input type="password" placeholder="请输入密码" value={formPassword} onChange={(e) => setFormPassword(e.target.value)} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label>邮箱</Label>
-                  <Input type="email" placeholder="请输入邮箱" />
+                  <Label>姓名</Label>
+                  <Input placeholder="请输入姓名" value={formName} onChange={(e) => setFormName(e.target.value)} />
                 </div>
                 <div className="grid gap-2">
-                  <Label>手机号</Label>
-                  <Input placeholder="请输入手机号" />
+                  <Label>组织</Label>
+                  <Select value={formOrgId} onValueChange={setFormOrgId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="选择组织" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">无</SelectItem>
+                      {orgList.map((o) => <SelectItem key={o.id} value={String(o.id)}>{o.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label>角色</Label>
-                  <Select>
-                    <SelectTrigger>
-                      <SelectValue placeholder="选择角色" />
-                    </SelectTrigger>
+                  <Select value={formRole} onValueChange={setFormRole}>
+                    <SelectTrigger><SelectValue placeholder="选择角色" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="admin">系统管理员</SelectItem>
-                      <SelectItem value="manager">项目经理</SelectItem>
-                      <SelectItem value="hr">人事主管</SelectItem>
-                      <SelectItem value="finance">财务人员</SelectItem>
+                      <SelectItem value="admin">管理员</SelectItem>
+                      <SelectItem value="user">普通用户</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="grid gap-2">
-                  <Label>部门</Label>
-                  <Select>
-                    <SelectTrigger>
-                      <SelectValue placeholder="选择部门" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="hq">总部</SelectItem>
-                      <SelectItem value="project_a">项目部A</SelectItem>
-                      <SelectItem value="hr">人力资源部</SelectItem>
-                      <SelectItem value="finance">财务部</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <Label>初始密码</Label>
-                <Input type="password" placeholder="请设置初始密码" />
+                {editUser && (
+                  <div className="grid gap-2">
+                    <Label>启用</Label>
+                    <div className="flex items-center h-10">
+                      <Switch checked={formEnabled} onCheckedChange={setFormEnabled} />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setShowNewDialog(false)}>
+              <Button variant="outline" onClick={() => { setShowNewDialog(false); setEditUser(null); setFormUsername(""); setFormPassword(""); setFormName(""); setFormOrgId("") }}>
                 取消
               </Button>
-              <Button onClick={() => setShowNewDialog(false)}>
-                创建用户
+              <Button onClick={editUser ? handleUpdate : handleCreate} disabled={(!editUser && (!formUsername || !formPassword)) || isSubmitting}>
+                {isSubmitting ? "提交中..." : editUser ? "保存" : "创建用户"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -210,7 +283,7 @@ export default function UsersPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">总用户数</p>
-                <p className="text-2xl font-bold">{users.length}</p>
+                <p className="text-2xl font-bold">{list.length}</p>
               </div>
               <Users className="h-8 w-8 text-muted-foreground/50" />
             </div>
@@ -222,7 +295,7 @@ export default function UsersPage() {
               <div>
                 <p className="text-sm text-muted-foreground">活跃用户</p>
                 <p className="text-2xl font-bold text-green-500">
-                  {users.filter((u) => u.status === "active").length}
+                  {list.filter((u) => (u.enabled ?? 1)).length}
                 </p>
               </div>
               <UserCheck className="h-8 w-8 text-green-500/50" />
@@ -235,7 +308,7 @@ export default function UsersPage() {
               <div>
                 <p className="text-sm text-muted-foreground">禁用用户</p>
                 <p className="text-2xl font-bold text-destructive">
-                  {users.filter((u) => u.status === "inactive").length}
+                  {list.filter((u) => !(u.enabled ?? 1)).length}
                 </p>
               </div>
               <UserX className="h-8 w-8 text-destructive/50" />
@@ -248,7 +321,7 @@ export default function UsersPage() {
               <div>
                 <p className="text-sm text-muted-foreground">管理员</p>
                 <p className="text-2xl font-bold text-primary">
-                  {users.filter((u) => u.role === "系统管理员").length}
+                  {list.filter((u) => u.role === "admin").length}
                 </p>
               </div>
               <Shield className="h-8 w-8 text-primary/50" />
@@ -263,7 +336,7 @@ export default function UsersPage() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle>用户列表</CardTitle>
-              <CardDescription>共 {users.length} 个用户</CardDescription>
+              <CardDescription>共 {list.length} 个用户</CardDescription>
             </div>
             <div className="flex gap-2">
               <div className="relative w-64">
@@ -302,32 +375,31 @@ export default function UsersPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {users.map((user) => (
+              {filtered.map((user) => (
                 <TableRow key={user.id}>
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <Avatar className="h-9 w-9">
-                        <AvatarImage src={`/placeholder-${user.id}.jpg`} />
                         <AvatarFallback className="bg-primary/10 text-primary">
-                          {user.name.slice(0, 1)}
+                          {(user.name ?? user.username).slice(0, 1)}
                         </AvatarFallback>
                       </Avatar>
                       <div>
-                        <p className="font-medium">{user.name}</p>
-                        <p className="text-xs text-muted-foreground">{user.email}</p>
+                        <p className="font-medium">{user.name ?? user.username}</p>
+                        <p className="text-xs text-muted-foreground">{user.username}</p>
                       </div>
                     </div>
                   </TableCell>
                   <TableCell className="font-mono">{user.username}</TableCell>
                   <TableCell>
-                    <Badge className={roleColors[user.role] || "bg-gray-100 text-gray-700"}>
-                      {user.role}
+                    <Badge className={roleColors[user.role ?? ""] || "bg-gray-100 text-gray-700"}>
+                      {user.role === "admin" ? "管理员" : "普通用户"}
                     </Badge>
                   </TableCell>
-                  <TableCell>{user.department}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{user.lastLogin}</TableCell>
+                  <TableCell>{user.org_name ?? "-"}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">-</TableCell>
                   <TableCell>
-                    <Switch checked={user.status === "active"} />
+                    <Badge variant={user.enabled ? "default" : "secondary"}>{user.enabled ? "启用" : "禁用"}</Badge>
                   </TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>
@@ -337,18 +409,20 @@ export default function UsersPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setEditUser(user)
+                            setFormUsername(user.username)
+                            setFormName(user.name ?? "")
+                            setFormOrgId(user.org_id ? String(user.org_id) : "")
+                            setFormRole(user.role ?? "admin")
+                            setFormEnabled(!!(user.enabled ?? 1))
+                            setFormPassword("")
+                            setShowNewDialog(true)
+                          }}
+                        >
                           <Edit className="h-4 w-4 mr-2" />
                           编辑
-                        </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          <Key className="h-4 w-4 mr-2" />
-                          重置密码
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-destructive">
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          删除
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>

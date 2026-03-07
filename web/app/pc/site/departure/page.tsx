@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -42,8 +42,16 @@ import {
   CheckCircle2,
   Clock,
 } from "lucide-react"
+import { api } from "@/lib/api"
 
-const departureRecords = [
+interface PersonOnSite {
+  id: number
+  work_no?: string
+  name: string
+  org_name?: string
+}
+
+const departureRecordsMock = [
   {
     id: "1",
     name: "李明",
@@ -91,6 +99,34 @@ const statusConfig = {
 export default function DeparturePage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [showNewDialog, setShowNewDialog] = useState(false)
+  const [onSiteList, setOnSiteList] = useState<PersonOnSite[]>([])
+  const [selectedPersonId, setSelectedPersonId] = useState<string>("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const fetchOnSite = useCallback(async () => {
+    try {
+      const res = await api<{ list: PersonOnSite[] }>("/api/person/archive", { query: { on_site: "1", pageSize: "200" } })
+      setOnSiteList(res.list ?? [])
+    } catch { setOnSiteList([]) }
+  }, [])
+
+  useEffect(() => { fetchOnSite() }, [fetchOnSite])
+
+  const handleLeave = async () => {
+    if (!selectedPersonId) return
+    setIsSubmitting(true)
+    try {
+      await api("/api/site/leave", { method: "POST", body: { person_id: parseInt(selectedPersonId, 10) } })
+      setShowNewDialog(false)
+      setSelectedPersonId("")
+      fetchOnSite()
+    } catch (e) { console.error(e) }
+    setIsSubmitting(false)
+  }
+
+  const filtered = onSiteList.filter((p) =>
+    (p.name ?? "").includes(searchTerm) || (p.work_no ?? "").includes(searchTerm) || (p.org_name ?? "").includes(searchTerm)
+  )
 
   return (
     <div className="space-y-6">
@@ -116,14 +152,14 @@ export default function DeparturePage() {
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
                 <Label>选择人员</Label>
-                <Select>
+                <Select value={selectedPersonId} onValueChange={setSelectedPersonId}>
                   <SelectTrigger>
                     <SelectValue placeholder="请选择离场人员" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="1">李明 - 钢筋班组</SelectItem>
-                    <SelectItem value="2">王建国 - 木工班组</SelectItem>
-                    <SelectItem value="3">张伟 - 混凝土班组</SelectItem>
+                    {onSiteList.map((p) => (
+                      <SelectItem key={p.id} value={String(p.id)}>{p.name} ({p.org_name ?? p.work_no ?? "-"})</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -152,11 +188,9 @@ export default function DeparturePage() {
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setShowNewDialog(false)}>
-                取消
-              </Button>
-              <Button onClick={() => setShowNewDialog(false)}>
-                提交登记
+              <Button variant="outline" onClick={() => setShowNewDialog(false)}>取消</Button>
+              <Button onClick={handleLeave} disabled={!selectedPersonId || isSubmitting}>
+                {isSubmitting ? "提交中..." : "确认离场"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -169,8 +203,8 @@ export default function DeparturePage() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">本月离场</p>
-                <p className="text-2xl font-bold">45</p>
+                <p className="text-sm text-muted-foreground">在岗人数</p>
+                <p className="text-2xl font-bold">{onSiteList.length}</p>
               </div>
               <LogOut className="h-8 w-8 text-muted-foreground/50" />
             </div>
@@ -180,8 +214,8 @@ export default function DeparturePage() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">待处理</p>
-                <p className="text-2xl font-bold text-orange-500">8</p>
+                <p className="text-sm text-muted-foreground">可离场</p>
+                <p className="text-2xl font-bold text-orange-500">{onSiteList.length}</p>
               </div>
               <Clock className="h-8 w-8 text-orange-500/50" />
             </div>
@@ -253,46 +287,39 @@ export default function DeparturePage() {
       {/* 离场记录表格 */}
       <Card>
         <CardHeader>
-          <CardTitle>离场记录</CardTitle>
-          <CardDescription>共 {departureRecords.length} 条记录</CardDescription>
+          <CardTitle>当前在岗人员</CardTitle>
+          <CardDescription>共 {filtered.length} 人，点击「办理离场」或使用上方按钮登记</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>工号</TableHead>
                 <TableHead>姓名</TableHead>
-                <TableHead>身份证号</TableHead>
                 <TableHead>所属项目</TableHead>
-                <TableHead>班组</TableHead>
-                <TableHead>入场日期</TableHead>
-                <TableHead>离场日期</TableHead>
-                <TableHead>离场原因</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead>操作</TableHead>
+                <TableHead className="text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {departureRecords.map((record) => (
+              {filtered.map((record) => (
                 <TableRow key={record.id}>
-                  <TableCell className="font-medium">{record.name}</TableCell>
-                  <TableCell className="font-mono text-sm">{record.idCard}</TableCell>
-                  <TableCell>{record.project}</TableCell>
-                  <TableCell>{record.team}</TableCell>
-                  <TableCell>{record.entryDate}</TableCell>
-                  <TableCell>{record.departureDate}</TableCell>
-                  <TableCell>{record.reason}</TableCell>
-                  <TableCell>
-                    <Badge className={statusConfig[record.status as keyof typeof statusConfig].color}>
-                      {statusConfig[record.status as keyof typeof statusConfig].label}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-2">
-                      <Button variant="ghost" size="sm">查看</Button>
-                      {record.status === "pending" && (
-                        <Button variant="outline" size="sm">确认</Button>
-                      )}
-                    </div>
+                  <TableCell className="font-medium">{record.work_no ?? record.id}</TableCell>
+                  <TableCell>{record.name}</TableCell>
+                  <TableCell>{record.org_name ?? "-"}</TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          await api("/api/site/leave", { method: "POST", body: { person_id: record.id } })
+                          fetchOnSite()
+                        } catch (e) { console.error(e) }
+                      }}
+                    >
+                      <LogOut className="h-3 w-3 mr-1" />
+                      办理离场
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}

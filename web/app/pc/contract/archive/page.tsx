@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -39,82 +39,59 @@ import {
   Calendar,
   Building2,
 } from "lucide-react"
+import { api, downloadContractPdf } from "@/lib/api"
 
-const archivedContracts = [
-  {
-    id: "ARC20240301001",
-    contractId: "CON001",
-    name: "张三",
-    template: "劳动合同-标准版",
-    project: "项目A-主体工程",
-    team: "钢筋班组",
-    signTime: "2024-03-01 14:32:15",
-    startDate: "2024-03-01",
-    endDate: "2025-02-28",
-    status: "valid",
-    fileSize: "256KB",
-  },
-  {
-    id: "ARC20240302002",
-    contractId: "CON002",
-    name: "李四",
-    template: "劳动合同-标准版",
-    project: "项目A-主体工程",
-    team: "木工班组",
-    signTime: "2024-03-02 10:15:42",
-    startDate: "2024-03-02",
-    endDate: "2025-03-01",
-    status: "valid",
-    fileSize: "248KB",
-  },
-  {
-    id: "ARC20240215003",
-    contractId: "CON010",
-    name: "周九",
-    template: "临时用工协议",
-    project: "项目B-装修工程",
-    team: "水电班组",
-    signTime: "2024-02-15 09:20:33",
-    startDate: "2024-02-15",
-    endDate: "2024-03-15",
-    status: "expired",
-    fileSize: "198KB",
-  },
-  {
-    id: "ARC20240110004",
-    contractId: "CON015",
-    name: "吴十",
-    template: "安全责任书",
-    project: "项目C-基建工程",
-    team: "混凝土班组",
-    signTime: "2024-01-10 16:45:20",
-    startDate: "2024-01-10",
-    endDate: "2025-01-09",
-    status: "voided",
-    fileSize: "156KB",
-  },
-]
+interface ContractArchiveItem {
+  id: number
+  title?: string
+  person_name?: string
+  work_no?: string
+  signed_at?: string
+  status?: string
+  person_org_id?: number
+  org_name?: string
+}
 
 const statusLabels: Record<string, { label: string; color: string }> = {
-  valid: { label: "有效", color: "bg-accent/10 text-accent border-accent/20" },
-  expired: { label: "已到期", color: "bg-warning/10 text-warning border-warning/20" },
-  voided: { label: "已作废", color: "bg-muted text-muted-foreground border-muted" },
+  已签署: { label: "有效", color: "bg-accent/10 text-accent border-accent/20" },
+  已作废: { label: "已作废", color: "bg-muted text-muted-foreground border-muted" },
 }
 
 export default function ContractArchivePage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedProject, setSelectedProject] = useState("all")
-  const [selectedStatus, setSelectedStatus] = useState("all")
+  const [list, setList] = useState<ContractArchiveItem[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const [orgList, setOrgList] = useState<{ id: number; name: string }[]>([])
 
-  const filteredContracts = archivedContracts.filter((contract) => {
-    const matchesSearch =
-      contract.name.includes(searchTerm) ||
-      contract.id.includes(searchTerm) ||
-      contract.contractId.includes(searchTerm)
-    const matchesProject = selectedProject === "all" || contract.project.includes(selectedProject)
-    const matchesStatus = selectedStatus === "all" || contract.status === selectedStatus
-    return matchesSearch && matchesProject && matchesStatus
-  })
+  const fetchList = useCallback(async () => {
+    try {
+      const q: Record<string, string> = { page: String(page), pageSize: "20" }
+      if (selectedProject !== "all") q.org_id = selectedProject
+      if (searchTerm.trim()) q.title = searchTerm.trim()
+      const res = await api<{ list: ContractArchiveItem[]; total: number }>("/api/contract/archive", { query: q })
+      setList(res.list ?? [])
+      setTotal(res.total ?? 0)
+    } catch { setList([]); setTotal(0) }
+  }, [page, selectedProject, searchTerm])
+
+  const fetchOrg = useCallback(async () => {
+    try {
+      const { tree } = await api<{ tree: { id: number; name: string; children?: unknown[] }[] }>("/api/sys/org")
+      const flatten = (n: { id: number; name: string; children?: unknown[] }[]): { id: number; name: string }[] => {
+        const out: { id: number; name: string }[] = []
+        n.forEach((x) => { out.push({ id: x.id, name: x.name }); if (x.children?.length) out.push(...flatten(x.children as { id: number; name: string; children?: unknown[] }[])) })
+        return out
+      }
+      setOrgList(flatten(tree ?? []))
+    } catch { setOrgList([]) }
+  }, [])
+
+  useEffect(() => { fetchList() }, [fetchList])
+  useEffect(() => { fetchOrg() }, [fetchOrg])
+
+  const filteredContracts = list
 
   return (
     <div className="space-y-6">
@@ -139,7 +116,7 @@ export default function ContractArchivePage() {
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">归档总数</p>
-                <p className="text-2xl font-bold">3,548</p>
+                <p className="text-2xl font-bold">{total.toLocaleString()}</p>
               </div>
             </div>
           </CardContent>
@@ -152,7 +129,7 @@ export default function ContractArchivePage() {
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">有效合同</p>
-                <p className="text-2xl font-bold">3,256</p>
+                <p className="text-2xl font-bold">{total.toLocaleString()}</p>
               </div>
             </div>
           </CardContent>
@@ -164,8 +141,8 @@ export default function ContractArchivePage() {
                 <Calendar className="h-5 w-5 text-warning" />
               </div>
               <div>
-                <p className="text-sm font-medium text-muted-foreground">已到期</p>
-                <p className="text-2xl font-bold">245</p>
+                <p className="text-sm font-medium text-muted-foreground">已签署</p>
+                <p className="text-2xl font-bold">{total.toLocaleString()}</p>
               </div>
             </div>
           </CardContent>
@@ -177,8 +154,8 @@ export default function ContractArchivePage() {
                 <Trash2 className="h-5 w-5 text-muted-foreground" />
               </div>
               <div>
-                <p className="text-sm font-medium text-muted-foreground">已作废</p>
-                <p className="text-2xl font-bold">47</p>
+                <p className="text-sm font-medium text-muted-foreground">合同数</p>
+                <p className="text-2xl font-bold">{list.length}</p>
               </div>
             </div>
           </CardContent>
@@ -202,7 +179,7 @@ export default function ContractArchivePage() {
                 className="pl-9"
               />
             </div>
-            <Select value={selectedProject} onValueChange={setSelectedProject}>
+            <Select value={selectedProject} onValueChange={(v) => { setSelectedProject(v); setPage(1) }}>
               <SelectTrigger className="w-40">
                 <Building2 className="mr-2 h-4 w-4" />
                 <SelectValue placeholder="选择项目" />
@@ -214,15 +191,12 @@ export default function ContractArchivePage() {
                 <SelectItem value="项目C">项目C-基建工程</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+            <Select value="all">
               <SelectTrigger className="w-32">
                 <SelectValue placeholder="状态筛选" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">全部状态</SelectItem>
-                <SelectItem value="valid">有效</SelectItem>
-                <SelectItem value="expired">已到期</SelectItem>
-                <SelectItem value="voided">已作废</SelectItem>
+                <SelectItem value="all">全部</SelectItem>
               </SelectContent>
             </Select>
             <div className="flex items-center gap-2">
@@ -238,15 +212,13 @@ export default function ContractArchivePage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>归档编号</TableHead>
-                <TableHead>合同编号</TableHead>
+                <TableHead>合同ID</TableHead>
+                <TableHead>标题</TableHead>
                 <TableHead>签约人</TableHead>
-                <TableHead>合同类型</TableHead>
-                <TableHead>所属项目/班组</TableHead>
-                <TableHead>合同期限</TableHead>
+                <TableHead>工号</TableHead>
+                <TableHead>所属项目</TableHead>
                 <TableHead>签署时间</TableHead>
                 <TableHead>状态</TableHead>
-                <TableHead>文件大小</TableHead>
                 <TableHead className="text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
@@ -254,33 +226,16 @@ export default function ContractArchivePage() {
               {filteredContracts.map((contract) => (
                 <TableRow key={contract.id}>
                   <TableCell className="font-mono text-sm">{contract.id}</TableCell>
-                  <TableCell className="font-medium">{contract.contractId}</TableCell>
-                  <TableCell>{contract.name}</TableCell>
-                  <TableCell>{contract.template}</TableCell>
+                  <TableCell className="font-medium">{contract.title ?? "-"}</TableCell>
+                  <TableCell>{contract.person_name ?? "-"}</TableCell>
+                  <TableCell className="text-muted-foreground">{contract.work_no ?? "-"}</TableCell>
+                  <TableCell>{contract.org_name ?? "-"}</TableCell>
+                  <TableCell className="text-muted-foreground text-sm">{contract.signed_at ?? "-"}</TableCell>
                   <TableCell>
-                    <div>
-                      <p className="text-sm">{contract.project}</p>
-                      <p className="text-xs text-muted-foreground">{contract.team}</p>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-sm">
-                      <p>{contract.startDate}</p>
-                      <p className="text-muted-foreground">至 {contract.endDate}</p>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-sm">
-                    {contract.signTime}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={statusLabels[contract.status].color}
-                    >
-                      {statusLabels[contract.status].label}
+                    <Badge variant="outline" className={(statusLabels[contract.status ?? "已签署"] ?? statusLabels["已签署"]).color}>
+                      {statusLabels[contract.status ?? "已签署"]?.label ?? "有效"}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{contract.fileSize}</TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -289,19 +244,22 @@ export default function ContractArchivePage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem className="gap-2">
-                          <Eye className="h-4 w-4" />
-                          预览合同
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="gap-2">
+                        <DropdownMenuItem className="gap-2" onClick={() => downloadContractPdf(String(contract.id))}>
                           <Download className="h-4 w-4" />
                           下载PDF
                         </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        {contract.status === "valid" && (
-                          <DropdownMenuItem className="gap-2 text-destructive">
+                        {contract.status === "已签署" && (
+                          <DropdownMenuItem
+                            className="gap-2 text-destructive"
+                            onClick={async () => {
+                              try {
+                                await api(`/api/contract/${contract.id}/invalidate`, { method: "PUT" })
+                                fetchList()
+                              } catch (e) { console.error(e) }
+                            }}
+                          >
                             <Trash2 className="h-4 w-4" />
-                            作废合同
+                            作废
                           </DropdownMenuItem>
                         )}
                       </DropdownMenuContent>
@@ -315,7 +273,7 @@ export default function ContractArchivePage() {
           {/* 分页 */}
           <div className="mt-4 flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              显示 1-{filteredContracts.length} 条，共 3,548 条
+              显示 1-{filteredContracts.length} 条，共 {total} 条
             </p>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" disabled>
