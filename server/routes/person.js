@@ -8,6 +8,13 @@ import { parsePagination } from '../lib/validate.js'
 import faceVerifyService from '../lib/faceVerify.js'
 import { encrypt, decrypt, maskSensitiveData } from '../lib/crypto.js'
 import { faceVerifyRateLimit } from '../middleware/rateLimit.js'
+import multer from 'multer'
+import XLSX from 'xlsx'
+import fs from 'fs'
+import path from 'path'
+
+// 配置文件上传
+const upload = multer({ dest: path.join(process.cwd(), 'uploads') })
 
 const router = Router()
 
@@ -51,7 +58,7 @@ router.get('/archive/:id', (req, res) => {
 })
 
 router.post('/archive', (req, res) => {
-  const { org_id, work_no, name, id_card, mobile, bank_card, status = '预注册' } = req.body || {}
+  const { org_id, work_no, name, id_card, mobile, bank_card, status = '预注册', job_title } = req.body || {}
   if (!name) return res.status(400).json({ message: '姓名必填' })
 
   // 加密敏感数据
@@ -60,8 +67,8 @@ router.post('/archive', (req, res) => {
   const encryptedBankCard = bank_card ? encrypt(bank_card) : null
 
   const r = db.prepare(`
-    INSERT INTO person (org_id, work_no, name, id_card, mobile, bank_card, status) VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(org_id ?? null, work_no ?? null, name, encryptedIdCard, encryptedMobile, encryptedBankCard, status)
+    INSERT INTO person (org_id, work_no, name, id_card, mobile, bank_card, status, job_title) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(org_id ?? null, work_no ?? null, name, encryptedIdCard, encryptedMobile, encryptedBankCard, status, job_title ?? null)
   res.json({ id: r.lastInsertRowid })
 })
 
@@ -69,7 +76,7 @@ router.put('/archive/:id', (req, res) => {
   const { id } = req.params
   const exists = db.prepare('SELECT 1 FROM person WHERE id = ?').get(id)
   if (!exists) return res.status(404).json({ message: '人员不存在' })
-  const { org_id, work_no, name, id_card, mobile, bank_card, status } = req.body || {}
+  const { org_id, work_no, name, id_card, mobile, bank_card, status, job_title, work_address, signature_image } = req.body || {}
   const updates = ['updated_at = datetime(\'now\')']
   const values = []
   if (org_id !== undefined) { updates.push('org_id = ?'); values.push(org_id) }
@@ -79,8 +86,33 @@ router.put('/archive/:id', (req, res) => {
   if (mobile !== undefined) { updates.push('mobile = ?'); values.push(mobile ? encrypt(mobile) : null) }
   if (bank_card !== undefined) { updates.push('bank_card = ?'); values.push(bank_card ? encrypt(bank_card) : null) }
   if (status !== undefined) { updates.push('status = ?'); values.push(status) }
+  if (job_title !== undefined) { updates.push('job_title = ?'); values.push(job_title) }
+  if (work_address !== undefined) { updates.push('work_address = ?'); values.push(work_address) }
+  if (signature_image !== undefined) { updates.push('signature_image = ?'); values.push(signature_image) }
   if (values.length === 0) return res.status(400).json({ message: '无有效字段' })
   values.push(id)
+  db.prepare(`UPDATE person SET ${updates.join(', ')} WHERE id = ?`).run(...values)
+  res.json({ ok: true })
+})
+
+/**
+ * H5 激活信息补全（身份证、手机号、手写签名）
+ * - 仅允许当前登录工人（workerId）更新自己的记录
+ */
+router.post('/me/activation', (req, res) => {
+  const workerId = req.user?.workerId
+  if (!workerId) return res.status(401).json({ message: '请以工人身份登录' })
+  const { id_card, mobile, signature_image } = req.body || {}
+  const exists = db.prepare('SELECT 1 FROM person WHERE id = ?').get(workerId)
+  if (!exists) return res.status(404).json({ message: '人员不存在' })
+
+  const updates = ["updated_at = datetime('now')"]
+  const values = []
+  if (id_card !== undefined) { updates.push('id_card = ?'); values.push(id_card ? encrypt(String(id_card)) : null) }
+  if (mobile !== undefined) { updates.push('mobile = ?'); values.push(mobile ? encrypt(String(mobile)) : null) }
+  if (signature_image !== undefined) { updates.push('signature_image = ?'); values.push(signature_image) }
+  if (values.length === 0) return res.status(400).json({ message: '无有效字段' })
+  values.push(workerId)
   db.prepare(`UPDATE person SET ${updates.join(', ')} WHERE id = ?`).run(...values)
   res.json({ ok: true })
 })
@@ -139,7 +171,7 @@ router.get('/auth', (req, res) => {
   const whereStr = where.length ? ' AND ' + where.join(' AND ') : ''
   const total = db.prepare('SELECT COUNT(*) as n FROM person p LEFT JOIN org o ON p.org_id = o.id WHERE 1=1' + whereStr).get(...params).n
   const list = db.prepare(`
-    SELECT p.id, p.work_no, p.name, p.id_card, p.mobile, p.status, p.updated_at, p.auth_review_status, o.name as org_name
+    SELECT p.id, p.work_no, p.name, p.id_card, p.mobile, p.status, p.updated_at, p.auth_review_status, p.face_verified, p.face_verified_at, o.name as org_name
     FROM person p LEFT JOIN org o ON p.org_id = o.id
     WHERE 1=1 ${whereStr}
     ORDER BY p.updated_at DESC
@@ -155,6 +187,7 @@ router.get('/auth', (req, res) => {
       id_filled: idFilled,
       mobile_filled: mobileFilled,
       filled: idFilled && mobileFilled,
+      face_verified: !!r.face_verified,
     }
   })
   res.json({ list: withFlags, total: Number(total), page: Math.max(1, parseInt(page) || 1), pageSize: Math.min(100, Math.max(1, parseInt(pageSize) || 20)) })
@@ -210,8 +243,13 @@ router.post('/face-verify', faceVerifyRateLimit, async (req, res) => {
 
     switch (mode) {
       case 'living':
-        // 活体检测
+        // 活体检测（阿里云等，配置 ALIYUN_ACCESS_KEY_* 后生效）
         result = await faceVerifyService.detectLivingFace({ image })
+        if (result.passed && person_id) {
+          db.prepare(`
+            UPDATE person SET face_verified = 1, face_verified_at = datetime('now'), updated_at = datetime('now') WHERE id = ?
+          `).run(person_id)
+        }
         break
 
       case 'compare':
@@ -220,6 +258,11 @@ router.post('/face-verify', faceVerifyRateLimit, async (req, res) => {
           sourceImage: image, 
           targetImage: target_image 
         })
+        if (result.passed && person_id) {
+          db.prepare(`
+            UPDATE person SET face_verified = 1, face_verified_at = datetime('now'), updated_at = datetime('now') WHERE id = ?
+          `).run(person_id)
+        }
         break
 
       case 'full':
@@ -302,6 +345,219 @@ router.get('/:id', (req, res) => {
   const row = db.prepare('SELECT * FROM person WHERE id = ?').get(req.params.id)
   if (!row) return res.status(404).json({ message: '不存在' })
   res.json(row)
+})
+
+/**
+ * 批量导入人员信息
+ * 支持Excel文件上传，解析后批量插入
+ */
+router.post('/batch-import', upload.single('file'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: '请上传文件' })
+    }
+
+    // 读取Excel文件
+    const workbook = XLSX.readFile(req.file.path)
+    const sheetName = workbook.SheetNames[0]
+    const worksheet = workbook.Sheets[sheetName]
+    const data = XLSX.utils.sheet_to_json(worksheet)
+
+    // 清理临时文件
+    fs.unlinkSync(req.file.path)
+
+    if (!data || data.length === 0) {
+      return res.status(400).json({ message: '文件无数据' })
+    }
+
+    // 验证数据
+    const errors = []
+    const validData = []
+
+    data.forEach((item, index) => {
+      const rowErrors = []
+      
+      // 验证必填字段
+      let name = item.name || item['姓名'] || ''
+      if (String(name).trim() === '') {
+        rowErrors.push('姓名不能为空')
+      }
+
+      // 验证手机号（如果提供）
+      let mobile = item.mobile || item['手机号'] || item['电话'] || ''
+      if (mobile && !/^1[3-9]\d{9}$/.test(String(mobile).trim())) {
+        rowErrors.push('手机号格式不正确')
+      }
+
+      // 验证身份证号（如果提供）
+      let id_card = item.id_card || item['身份证号'] || item['身份证'] || ''
+      if (id_card && !/^[1-9]\d{5}(18|19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{3}[0-9Xx]$/.test(String(id_card).trim())) {
+        rowErrors.push('身份证号格式不正确')
+      }
+
+      if (rowErrors.length > 0) {
+        errors.push({ row: index + 2, errors: rowErrors })
+      } else {
+        validData.push({
+          org_id: item.org_id || item['组织ID'] || item['所属组织'] || null,
+          work_no: item.work_no || item['工号'] || null,
+          name: String(name).trim(),
+          id_card: id_card ? encrypt(String(id_card).trim()) : null,
+          mobile: mobile ? encrypt(String(mobile).trim()) : null,
+          bank_card: item.bank_card || item['银行卡号'] || null,
+          status: item.status || item['状态'] || '预注册',
+          job_title: item.job_title || item['工种'] || item['job_type'] || null // 工种信息
+        })
+      }
+    })
+
+    if (errors.length > 0) {
+      return res.status(400).json({ message: '数据验证失败', errors })
+    }
+
+    // 批量插入数据
+    const insertStmt = db.prepare(`
+      INSERT INTO person (org_id, work_no, name, id_card, mobile, bank_card, status, job_title, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+    `)
+
+    const transaction = db.transaction((data) => {
+      for (const item of data) {
+        insertStmt.run(
+          item.org_id,
+          item.work_no,
+          item.name,
+          item.id_card,
+          item.mobile,
+          item.bank_card,
+          item.status,
+          item.job_title
+        )
+      }
+    })
+
+    transaction(validData)
+
+    res.json({ 
+      ok: true, 
+      message: `成功导入 ${validData.length} 条数据`,
+      imported: validData.length,
+      total: data.length
+    })
+
+  } catch (error) {
+    console.error('批量导入失败:', error)
+    
+    // 清理临时文件
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path)
+    }
+
+    res.status(500).json({ 
+      message: '导入失败',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    })
+  }
+})
+
+/**
+ * 下载导入模板
+ */
+router.get('/import-template', (req, res) => {
+  try {
+    // 创建模板数据
+    const templateData = [
+      {
+        name: '姓名',
+        work_no: '工号',
+        id_card: '身份证号',
+        mobile: '手机号',
+        org_id: '组织ID',
+        status: '状态',
+        job_type: '工种'
+      },
+      {
+        name: '张三',
+        work_no: 'W001',
+        id_card: '110101199001011234',
+        mobile: '13800138000',
+        org_id: '1',
+        status: '预注册',
+        job_type: '瓦工'
+      }
+    ]
+
+    // 创建工作簿和工作表
+    const workbook = XLSX.utils.book_new()
+    const worksheet = XLSX.utils.json_to_sheet(templateData)
+    XLSX.utils.book_append_sheet(workbook, worksheet, '人员信息')
+
+    // 生成Excel文件
+    const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer' })
+
+    // 设置响应头
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    res.setHeader('Content-Disposition', 'attachment; filename=人员信息导入模板.xlsx')
+
+    res.send(buffer)
+
+  } catch (error) {
+    console.error('下载模板失败:', error)
+    res.status(500).json({ message: '下载模板失败' })
+  }
+})
+
+// 证书管理接口
+router.get('/archive/:id/certificates', (req, res) => {
+  const { id } = req.params
+  const personExists = db.prepare('SELECT 1 FROM person WHERE id = ?').get(id)
+  if (!personExists) return res.status(404).json({ message: '人员不存在' })
+  const list = db.prepare(
+    'SELECT id, name, certificate_no, issue_date, expiry_date, status FROM person_certificate WHERE person_id = ? ORDER BY expiry_date DESC'
+  ).all(id)
+  res.json({ list })
+})
+
+router.post('/archive/:id/certificates', (req, res) => {
+  const { id } = req.params
+  const personExists = db.prepare('SELECT 1 FROM person WHERE id = ?').get(id)
+  if (!personExists) return res.status(404).json({ message: '人员不存在' })
+  const { name, certificate_no, issue_date, expiry_date, status = 'valid' } = req.body || {}
+  if (!name) return res.status(400).json({ message: 'name 必填' })
+  const r = db.prepare(
+    'INSERT INTO person_certificate (person_id, name, certificate_no, issue_date, expiry_date, status) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(id, name, certificate_no || null, issue_date || null, expiry_date || null, status)
+  res.json({ id: r.lastInsertRowid })
+})
+
+router.put('/archive/:id/certificates/:certId', (req, res) => {
+  const { id, certId } = req.params
+  const personExists = db.prepare('SELECT 1 FROM person WHERE id = ?').get(id)
+  if (!personExists) return res.status(404).json({ message: '人员不存在' })
+  const certExists = db.prepare('SELECT 1 FROM person_certificate WHERE id = ? AND person_id = ?').get(certId, id)
+  if (!certExists) return res.status(404).json({ message: '证书不存在' })
+  const { name, certificate_no, issue_date, expiry_date, status } = req.body || {}
+  const updates = []
+  const values = []
+  if (name !== undefined) { updates.push('name = ?'); values.push(name) }
+  if (certificate_no !== undefined) { updates.push('certificate_no = ?'); values.push(certificate_no) }
+  if (issue_date !== undefined) { updates.push('issue_date = ?'); values.push(issue_date) }
+  if (expiry_date !== undefined) { updates.push('expiry_date = ?'); values.push(expiry_date) }
+  if (status !== undefined) { updates.push('status = ?'); values.push(status) }
+  if (updates.length === 0) return res.status(400).json({ message: '无有效字段' })
+  values.push(certId)
+  db.prepare(`UPDATE person_certificate SET ${updates.join(', ')} WHERE id = ?`).run(...values)
+  res.json({ ok: true })
+})
+
+router.delete('/archive/:id/certificates/:certId', (req, res) => {
+  const { id, certId } = req.params
+  const personExists = db.prepare('SELECT 1 FROM person WHERE id = ?').get(id)
+  if (!personExists) return res.status(404).json({ message: '人员不存在' })
+  const certExists = db.prepare('SELECT 1 FROM person_certificate WHERE id = ? AND person_id = ?').get(certId, id)
+  if (!certExists) return res.status(404).json({ message: '证书不存在' })
+  db.prepare('DELETE FROM person_certificate WHERE id = ?').run(certId)
+  res.json({ ok: true })
 })
 
 export default router

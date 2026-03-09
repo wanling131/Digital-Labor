@@ -10,6 +10,32 @@ import { api } from "@/lib/api"
 
 type MenuNode = { path: string; label: string; children?: MenuNode[] }
 type RoleItem = { code: string; name: string; desc: string }
+type PermissionGroup = { name: string; keys: string[] }
+
+const PERMISSION_LABELS: Record<string, string> = {
+  'person:view': '查看人员',
+  'person:add': '新增人员',
+  'person:edit': '编辑人员',
+  'person:delete': '删除人员',
+  'person:import': '批量导入',
+  'person:batch_status': '批量状态变更',
+  'contract:view': '查看合同',
+  'contract:add': '新增合同',
+  'contract:edit': '编辑合同',
+  'settlement:view': '查看结算',
+  'settlement:generate': '生成结算单',
+  'settlement:confirm': '确认结算',
+  'attendance:view': '查看考勤',
+  'attendance:import': '导入考勤',
+  'attendance:log': '考勤日志',
+  'site:view': '查看现场',
+  'site:edit': '编辑现场',
+  'data:view': '查看报表',
+  'system:user': '用户管理',
+  'system:org': '组织管理',
+  'system:permission': '权限分配',
+  'system:log': '操作日志',
+}
 
 function collectPaths(nodes: MenuNode[], out: string[] = []): string[] {
   for (const n of nodes) {
@@ -54,26 +80,31 @@ function MenuTree({
 export default function PermissionsPage() {
   const [roles, setRoles] = useState<RoleItem[]>([])
   const [allMenus, setAllMenus] = useState<MenuNode[]>([])
+  const [permissionGroups, setPermissionGroups] = useState<PermissionGroup[]>([])
   const [selectedRole, setSelectedRole] = useState("")
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
+  const [selectedPermissions, setSelectedPermissions] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const allPaths = useMemo(() => collectPaths(allMenus), [allMenus])
-  const hasChanges = useMemo(() => {
-    if (!selectedRole) return false
-    return true
-  }, [selectedRole, selectedPaths])
+  const allPermissionKeys = useMemo(() => {
+    const keys: string[] = []
+    permissionGroups.forEach(g => keys.push(...g.keys))
+    return keys
+  }, [permissionGroups])
 
   useEffect(() => {
     Promise.all([
       api<{ list: RoleItem[] }>("/api/sys/role"),
       api<{ menus: MenuNode[] }>("/api/sys/all-menus"),
+      api<{ groups: PermissionGroup[] }>("/api/sys/all-permissions"),
     ])
-      .then(([roleRes, menuRes]) => {
+      .then(([roleRes, menuRes, permRes]) => {
         setRoles(roleRes.list || [])
         setAllMenus(menuRes.menus || [])
+        setPermissionGroups(permRes.groups || [])
         if (roleRes.list?.length && !selectedRole) setSelectedRole(roleRes.list[0].code)
       })
       .catch((e) => setError(e instanceof Error ? e.message : "加载失败"))
@@ -82,12 +113,21 @@ export default function PermissionsPage() {
 
   useEffect(() => {
     if (!selectedRole) return
-    api<{ paths: string[] }>(`/api/sys/role/${selectedRole}/menus`)
-      .then((res) => setSelectedPaths(new Set(res.paths || [])))
-      .catch(() => setSelectedPaths(new Set()))
+    Promise.all([
+      api<{ paths: string[] }>(`/api/sys/role/${selectedRole}/menus`),
+      api<{ keys: string[] }>(`/api/sys/role/${selectedRole}/permissions`),
+    ])
+      .then(([menuRes, permRes]) => {
+        setSelectedPaths(new Set(menuRes.paths || []))
+        setSelectedPermissions(new Set(permRes.keys || []))
+      })
+      .catch(() => {
+        setSelectedPaths(new Set())
+        setSelectedPermissions(new Set())
+      })
   }, [selectedRole])
 
-  const handleToggle = (path: string, checked: boolean) => {
+  const handleToggleMenu = (path: string, checked: boolean) => {
     setSelectedPaths((prev) => {
       const next = new Set(prev)
       if (checked) next.add(path)
@@ -96,19 +136,40 @@ export default function PermissionsPage() {
     })
   }
 
-  const handleSelectAll = () => setSelectedPaths(new Set(allPaths))
-  const handleSelectNone = () => setSelectedPaths(new Set())
+  const handleTogglePermission = (key: string, checked: boolean) => {
+    setSelectedPermissions((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(key)
+      else next.delete(key)
+      return next
+    })
+  }
 
-  const handleSave = () => {
+  const handleSelectAllMenus = () => setSelectedPaths(new Set(allPaths))
+  const handleSelectNoneMenus = () => setSelectedPaths(new Set())
+  const handleSelectAllPermissions = () => setSelectedPermissions(new Set(allPermissionKeys))
+  const handleSelectNonePermissions = () => setSelectedPermissions(new Set())
+
+  const handleSave = async () => {
     if (!selectedRole) return
     setSaving(true)
-    api(`/api/sys/role/${selectedRole}/menus`, {
-      method: "PUT",
-      body: { paths: Array.from(selectedPaths) },
-    })
-      .then(() => setError(null))
-      .catch((e) => setError(e instanceof Error ? e.message : "保存失败"))
-      .finally(() => setSaving(false))
+    try {
+      await Promise.all([
+        api(`/api/sys/role/${selectedRole}/menus`, {
+          method: "PUT",
+          body: { paths: Array.from(selectedPaths) },
+        }),
+        api(`/api/sys/role/${selectedRole}/permissions`, {
+          method: "PUT",
+          body: { keys: Array.from(selectedPermissions) },
+        }),
+      ])
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "保存失败")
+    } finally {
+      setSaving(false)
+    }
   }
 
   if (loading) {
@@ -124,7 +185,7 @@ export default function PermissionsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">权限分配</h1>
-          <p className="text-muted-foreground">配置各角色的可见菜单（与侧栏一致）</p>
+          <p className="text-muted-foreground">配置各角色的菜单访问权限与按钮操作权限</p>
         </div>
         <div className="flex gap-2">
           <Button onClick={handleSave} disabled={saving}>
@@ -163,35 +224,93 @@ export default function PermissionsPage() {
         ))}
       </div>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>
-                {roles.find((r) => r.code === selectedRole)?.name ?? selectedRole} - 菜单权限
-              </CardTitle>
-              <CardDescription>勾选该角色可访问的菜单项，保存后立即生效</CardDescription>
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* 菜单权限 */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>
+                  {roles.find((r) => r.code === selectedRole)?.name ?? selectedRole} - 菜单权限
+                </CardTitle>
+                <CardDescription>勾选该角色可访问的菜单项</CardDescription>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={handleSelectAllMenus}>
+                  全选
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleSelectNoneMenus}>
+                  取消全选
+                </Button>
+              </div>
             </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={handleSelectAll}>
-                全选
-              </Button>
-              <Button variant="outline" size="sm" onClick={handleSelectNone}>
-                取消全选
-              </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-2 mb-4">
+              <Badge variant="secondary">
+                已选 {selectedPaths.size} / {allPaths.length} 项
+              </Badge>
             </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-2 mb-4">
-            <Badge variant="secondary">
-              已选 {selectedPaths.size} / {allPaths.length} 项
-            </Badge>
-          </div>
-          <MenuTree nodes={allMenus} selectedPaths={selectedPaths} onToggle={handleToggle} />
-          <p className="mt-4 text-sm text-muted-foreground">数据范围：全部（占位，后续按组织树配置数据可见范围）</p>
-        </CardContent>
-      </Card>
+            <MenuTree nodes={allMenus} selectedPaths={selectedPaths} onToggle={handleToggleMenu} />
+          </CardContent>
+        </Card>
+
+        {/* 按钮权限 */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>
+                  {roles.find((r) => r.code === selectedRole)?.name ?? selectedRole} - 按钮权限
+                </CardTitle>
+                <CardDescription>勾选该角色可执行的操作按钮</CardDescription>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={handleSelectAllPermissions}>
+                  全选
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleSelectNonePermissions}>
+                  取消全选
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-2 mb-4">
+              <Badge variant="secondary">
+                已选 {selectedPermissions.size} / {allPermissionKeys.length} 项
+              </Badge>
+            </div>
+            <div className="space-y-4">
+              {permissionGroups.map((group) => (
+                <div key={group.name} className="border-l-2 border-primary/20 pl-4">
+                  <h4 className="text-sm font-medium mb-2 text-muted-foreground">{group.name}</h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    {group.keys.map((key) => (
+                      <div key={key} className="flex items-center gap-2">
+                        <Checkbox
+                          id={`perm-${key}`}
+                          checked={selectedPermissions.has(key)}
+                          onCheckedChange={(c) => handleTogglePermission(key, c === true)}
+                        />
+                        <label htmlFor={`perm-${key}`} className="text-sm cursor-pointer">
+                          {PERMISSION_LABELS[key] || key}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-6 p-3 bg-muted/50 rounded-lg">
+              <p className="text-sm text-muted-foreground">
+                <strong>数据范围说明：</strong>
+                业务员（user）仅能查看/操作其所属组织及下级组织的数据（人员、考勤等）；管理员可查看全部。
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 }

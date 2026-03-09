@@ -241,7 +241,7 @@ export default function RealtimePage() {
               </div>
               <Select defaultValue="all">
                 <SelectTrigger className="w-32">
-                  <SelectValue />
+                  <SelectValue placeholder="项目" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部项目</SelectItem>

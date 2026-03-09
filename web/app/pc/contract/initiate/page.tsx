@@ -42,6 +42,7 @@ import {
   AlertCircle,
 } from "lucide-react"
 import { api } from "@/lib/api"
+import { HomeButton } from "@/components/pc/home-button"
 
 interface PersonItem {
   id: number
@@ -172,9 +173,12 @@ export default function ContractInitiatePage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">合同发起</h1>
-          <p className="text-muted-foreground">按项目、班组、个人批量发起签约任务</p>
+        <div className="flex items-center gap-4">
+          <HomeButton />
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">合同发起</h1>
+            <p className="text-muted-foreground">按项目、班组、个人批量发起签约任务</p>
+          </div>
         </div>
       </div>
 

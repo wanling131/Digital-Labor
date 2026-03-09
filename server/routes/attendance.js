@@ -28,6 +28,7 @@ router.post('/import', upload.single('file'), (req, res) => {
       INSERT OR REPLACE INTO attendance (person_id, org_id, work_date, clock_in, clock_out, hours)
       VALUES (?, ?, ?, ?, ?, ?)
     `)
+    const logInsert = db.prepare('INSERT INTO clock_log (person_id, punch_at, type, source) VALUES (?, ?, ?, ?)')
     let count = 0
     for (let i = 1; i < rows.length; i++) {
       const row = rows[i]
@@ -46,6 +47,14 @@ router.post('/import', upload.single('file'), (req, res) => {
       if (Number.isNaN(hours)) hours = 0
       const orgId = orgIdx >= 0 && row[orgIdx] != null ? parseInt(row[orgIdx], 10) : null
       insert.run(personId, Number.isNaN(orgId) ? null : orgId, workDate, clockIn, clockOut, hours)
+      if (clockIn) {
+        const punchAtIn = workDate + ' ' + (clockIn.length <= 5 ? clockIn : clockIn.slice(0, 5)) + ':00'
+        try { logInsert.run(personId, punchAtIn, 'in', 'import') } catch (_) {}
+      }
+      if (clockOut) {
+        const punchAtOut = workDate + ' ' + (clockOut.length <= 5 ? clockOut : clockOut.slice(0, 5)) + ':00'
+        try { logInsert.run(personId, punchAtOut, 'out', 'import') } catch (_) {}
+      }
       count++
     }
     res.json({ ok: true, count })
@@ -100,7 +109,7 @@ router.get('/my', (req, res) => {
   res.json({ list })
 })
 
-// 工人端打卡：body { type: 'in' | 'out' }，记录当日上班/下班时间，与首页/考勤页共用 GET /my 数据
+// 工人端打卡：body { type: 'in' | 'out' }，记录当日上班/下班时间，与首页/考勤页共用 GET /my 数据；同时写入打卡流水
 router.post('/clock', (req, res) => {
   const person_id = req.user?.workerId
   if (!person_id) return res.status(401).json({ message: '请登录' })
@@ -109,6 +118,7 @@ router.post('/clock', (req, res) => {
   const now = new Date()
   const workDate = now.toISOString().slice(0, 10)
   const timeStr = now.toTimeString().slice(0, 5)
+  const punchAt = now.toISOString().slice(0, 19).replace('T', ' ')
   const person = db.prepare('SELECT org_id FROM person WHERE id = ?').get(person_id)
   const org_id = person?.org_id ?? null
   const row = db.prepare('SELECT id, clock_in, clock_out FROM attendance WHERE person_id = ? AND work_date = ?').get(person_id, workDate)
@@ -124,7 +134,33 @@ router.post('/clock', (req, res) => {
       VALUES (?, ?, ?, ?, ?)
     `).run(person_id, org_id, workDate, type === 'in' ? timeStr : null, type === 'out' ? timeStr : null)
   }
+  db.prepare('INSERT INTO clock_log (person_id, punch_at, type, source) VALUES (?, ?, ?, ?)').run(person_id, punchAt, type, 'h5')
   res.json({ ok: true, work_date: workDate, [type === 'in' ? 'clock_in' : 'clock_out']: timeStr })
+})
+
+// 打卡日志（流水）：支持按人员、组织、时间筛选，用于现场/本地打卡记录查询
+router.get('/log', (req, res) => {
+  const { person_id, org_id, start, end, page = 1, pageSize = 50 } = req.query
+  const where = []
+  const params = []
+  if (person_id) { where.push('c.person_id = ?'); params.push(person_id) }
+  if (org_id) { where.push('p.org_id = ?'); params.push(org_id) }
+  if (start) { where.push('c.punch_at >= ?'); params.push(start) }
+  if (end) { where.push('c.punch_at <= ?'); params.push(end + ' 23:59:59') }
+  const whereStr = where.length ? ' WHERE ' + where.join(' AND ') : ''
+  const total = db.prepare('SELECT COUNT(*) as n FROM clock_log c JOIN person p ON c.person_id = p.id' + whereStr).get(...params).n
+  const limit = Math.min(200, Math.max(1, parseInt(pageSize) || 50))
+  const offset = (Math.max(1, parseInt(page)) - 1) * limit
+  const list = db.prepare(`
+    SELECT c.id, c.person_id, c.punch_at, c.type, c.source, c.created_at, p.name as person_name, p.work_no, o.name as org_name
+    FROM clock_log c
+    JOIN person p ON c.person_id = p.id
+    LEFT JOIN org o ON p.org_id = o.id
+    ${whereStr}
+    ORDER BY c.punch_at DESC, c.id DESC
+    LIMIT ? OFFSET ?
+  `).all(...params, limit, offset)
+  res.json({ list, total: Number(total) })
 })
 
 export default router

@@ -60,6 +60,7 @@ const PATH_ICONS: Record<string, React.ElementType> = {
   "/pc/contract/archive": Archive,
   "/pc/attendance": Clock,
   "/pc/attendance/import": CalendarDays,
+  "/pc/attendance/log": Clock,
   "/pc/attendance/report": ClipboardList,
   "/pc/settlement": CreditCard,
   "/pc/settlement/generate": Wallet,
@@ -67,6 +68,7 @@ const PATH_ICONS: Record<string, React.ElementType> = {
   "/pc/site": Building2,
   "/pc/site/departure": LogOut,
   "/pc/site/realtime": Monitor,
+  "/pc/site/monitor": Activity,
   "/pc/system": Settings,
   "/pc/system/users": UserCog,
   "/pc/system/organization": Building,
@@ -101,6 +103,7 @@ const defaultMenuItems: MenuItem[] = [
     icon: Clock,
     children: [
       { title: "考勤数据接入", href: "/pc/attendance/import", icon: CalendarDays },
+      { title: "打卡日志", href: "/pc/attendance/log", icon: Clock },
       { title: "工时报表", href: "/pc/attendance/report", icon: ClipboardList },
     ],
   },
@@ -118,6 +121,7 @@ const defaultMenuItems: MenuItem[] = [
     children: [
       { title: "离场登记", href: "/pc/site/departure", icon: LogOut },
       { title: "在岗人员实时看板", href: "/pc/site/realtime", icon: Monitor },
+      { title: "现场监管", href: "/pc/site/monitor", icon: Activity },
     ],
   },
   {

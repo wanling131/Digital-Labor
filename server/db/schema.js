@@ -108,6 +108,14 @@ db.exec(`
   }
 })()
 
+// 电子签名：存储工人在激活/结算确认环节的手写签名图片（data URL 或文件路径）
+;(function addSignatureColumn() {
+  const cols = db.prepare("PRAGMA table_info(person)").all()
+  if (!cols.some((c) => c.name === 'signature_image')) {
+    db.exec("ALTER TABLE person ADD COLUMN signature_image TEXT")
+  }
+})()
+
 // 考勤记录：人员、日期、上班/下班、工时、项目/班组
 db.exec(`
   CREATE TABLE IF NOT EXISTS attendance (
@@ -131,6 +139,40 @@ db.exec(`
     file_path TEXT,
     version INTEGER DEFAULT 1,
     created_at TEXT DEFAULT (datetime('now'))
+  )
+`)
+
+// 为现有contract_template表添加新字段
+;(function addContractTemplateColumns() {
+  const cols = db.prepare("PRAGMA table_info(contract_template)").all()
+  
+  // 添加content字段
+  if (!cols.some((c) => c.name === 'content')) {
+    db.exec("ALTER TABLE contract_template ADD COLUMN content TEXT")
+  }
+  
+  // 添加variables字段
+  if (!cols.some((c) => c.name === 'variables')) {
+    db.exec("ALTER TABLE contract_template ADD COLUMN variables TEXT")
+  }
+  
+  // 添加is_visual字段
+  if (!cols.some((c) => c.name === 'is_visual')) {
+    db.exec("ALTER TABLE contract_template ADD COLUMN is_visual INTEGER DEFAULT 0")
+  }
+})()
+
+// 模板变量表
+db.exec(`
+  CREATE TABLE IF NOT EXISTS template_variable (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    template_id INTEGER,
+    name TEXT NOT NULL,
+    label TEXT NOT NULL,
+    type TEXT DEFAULT 'text',
+    options TEXT,
+    required INTEGER DEFAULT 0,
+    FOREIGN KEY (template_id) REFERENCES contract_template(id)
   )
 `)
 
@@ -171,6 +213,8 @@ db.exec(`
     status TEXT DEFAULT '待确认',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
+    confirm_at TEXT,
+    confirm_method TEXT,
     UNIQUE(person_id, period_start)
   )
 `)
@@ -242,6 +286,53 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_notification_person_id ON notification(p
 db.exec(`CREATE INDEX IF NOT EXISTS idx_notification_created_at ON notification(created_at)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_person_work_no ON person(work_no)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_person_face_verified ON person(face_verified)`)
+
+// 现场机具/设备：关联项目(org)，状态用于实时监管
+db.exec(`
+  CREATE TABLE IF NOT EXISTS equipment (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    org_id INTEGER,
+    name TEXT NOT NULL,
+    code TEXT,
+    status TEXT DEFAULT '正常',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (org_id) REFERENCES org(id)
+  )
+`)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_equipment_org_id ON equipment(org_id)`)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_equipment_status ON equipment(status)`)
+
+// 现场数据录入日志：进场/离场/备注/异常/机具等
+db.exec(`
+  CREATE TABLE IF NOT EXISTS site_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    org_id INTEGER,
+    user_id INTEGER,
+    log_type TEXT NOT NULL,
+    content TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (org_id) REFERENCES org(id),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+  )
+`)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_site_log_org_id ON site_log(org_id)`)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_site_log_created_at ON site_log(created_at)`)
+
+// 打卡流水日志：每次上班/下班打卡一条记录，便于本地打卡日志查询
+db.exec(`
+  CREATE TABLE IF NOT EXISTS clock_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    person_id INTEGER NOT NULL,
+    punch_at TEXT NOT NULL,
+    type TEXT NOT NULL,
+    source TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (person_id) REFERENCES person(id)
+  )
+`)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_clock_log_person_id ON clock_log(person_id)`)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_clock_log_punch_at ON clock_log(punch_at)`)
 
 // 默认管理员（密码 123456，与登录页演示账号一致；实际生产建议改为 bcrypt）
 const defaultHash = '123456'

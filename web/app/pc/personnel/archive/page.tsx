@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -49,8 +49,15 @@ import {
   UserCheck,
   FileText,
   Building2,
+  FileUp,
+  AlertCircle,
+  CheckCircle2,
+  X,
+  Award,
+  Loader2,
 } from "lucide-react"
 import { api } from "@/lib/api"
+import { HomeButton } from "@/components/pc/home-button"
 
 function maskIdCard(s?: string | null) {
   if (!s || s.length < 8) return "—"
@@ -88,16 +95,26 @@ export default function PersonnelArchivePage() {
   const [selectedOrgId, setSelectedOrgId] = useState<string>("all")
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
-  const [list, setList] = useState<{ id: number; work_no?: string; name?: string; id_card?: string; mobile?: string; org_id?: number; org_name?: string; status?: string; contract_signed?: number; on_site?: number; created_at?: string }[]>([])
+  const [list, setList] = useState<{ id: number; work_no?: string; name?: string; id_card?: string; mobile?: string; org_id?: number; org_name?: string; status?: string; contract_signed?: number; on_site?: number; created_at?: string; job_title?: string }[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const pageSize = 20
   const [loading, setLoading] = useState(true)
   const [orgList, setOrgList] = useState<{ id: number; name: string }[]>([])
   const [statusCounts, setStatusCounts] = useState<{ status: string; count: number }[]>([])
-  const [formData, setFormData] = useState({ org_id: "" as string | number, work_no: "", name: "", id_card: "", mobile: "", status: "预注册" })
+  const [formData, setFormData] = useState({ org_id: "" as string | number, work_no: "", name: "", id_card: "", mobile: "", status: "预注册", job_title: "" })
+  const [certFormData, setCertFormData] = useState({ name: "", certificate_no: "", issue_date: "", expiry_date: "" })
+  const [editingCertId, setEditingCertId] = useState<number | null>(null)
+  const [certSubmitting, setCertSubmitting] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [importLoading, setImportLoading] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
+  const [importSuccess, setImportSuccess] = useState<string | null>(null)
+  const [importErrors, setImportErrors] = useState<{ row: number; errors: string[] }[]>([])
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const loadList = useCallback(async () => {
     setLoading(true)
@@ -168,10 +185,11 @@ export default function PersonnelArchivePage() {
           id_card: formData.id_card.trim() || undefined,
           mobile: formData.mobile.trim() || undefined,
           status: formData.status,
+          job_title: formData.job_title.trim() || undefined,
         },
       })
       setIsAddDialogOpen(false)
-      setFormData({ org_id: "", work_no: "", name: "", id_card: "", mobile: "", status: "预注册" })
+      setFormData({ org_id: "", work_no: "", name: "", id_card: "", mobile: "", status: "预注册", job_title: "" })
       loadList()
       loadStatus()
     } finally {
@@ -188,6 +206,7 @@ export default function PersonnelArchivePage() {
       id_card: row.id_card ?? "",
       mobile: row.mobile ?? "",
       status: row.status ?? "预注册",
+      job_title: row.job_title ?? "",
     })
     setIsEditDialogOpen(true)
   }
@@ -205,6 +224,7 @@ export default function PersonnelArchivePage() {
           id_card: formData.id_card.trim() || null,
           mobile: formData.mobile.trim() || null,
           status: formData.status,
+          job_title: formData.job_title.trim() || null,
         },
       })
       setIsEditDialogOpen(false)
@@ -225,18 +245,196 @@ export default function PersonnelArchivePage() {
     } catch {}
   }
 
+  // 批量导入相关方法
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setSelectedFile(file)
+      setImportError(null)
+      setImportSuccess(null)
+      setImportErrors([])
+    }
+  }
+
+  const handleImport = async () => {
+    if (!selectedFile) {
+      setImportError("请选择要导入的文件")
+      return
+    }
+
+    setImportLoading(true)
+    setImportError(null)
+    setImportSuccess(null)
+    setImportErrors([])
+
+    try {
+      const formData = new FormData()
+      formData.append('file', selectedFile)
+
+      const res = await fetch('/api/person/batch-import', {
+        method: 'POST',
+        body: formData
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        if (data.errors) {
+          setImportErrors(data.errors)
+          setImportError("导入失败，存在数据验证错误")
+        } else {
+          setImportError(data.message || "导入失败")
+        }
+        return
+      }
+
+      setImportSuccess(`成功导入 ${data.imported} 条数据`)
+      setSelectedFile(null)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+      loadList()
+      loadStatus()
+    } catch (error) {
+      setImportError("导入失败，请重试")
+    } finally {
+      setImportLoading(false)
+    }
+  }
+
+  const handleDownloadTemplate = () => {
+    window.open('/api/person/import-template', '_blank')
+  }
+
+  const resetImportState = () => {
+    setSelectedFile(null)
+    setImportError(null)
+    setImportSuccess(null)
+    setImportErrors([])
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">人员档案</h1>
-          <p className="text-muted-foreground">管理人员基本信息、实名认证及合同状态</p>
+        <div className="flex items-center gap-4">
+          <HomeButton />
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">人员档案</h1>
+            <p className="text-muted-foreground">管理人员基本信息、实名认证及合同状态</p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" className="gap-2">
-            <Upload className="h-4 w-4" />
-            批量导入
-          </Button>
+          <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="gap-2">
+                <Upload className="h-4 w-4" />
+                批量导入
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>批量导入人员信息</DialogTitle>
+                <DialogDescription>
+                  上传Excel文件批量导入人员信息，支持工种信息导入
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                {/* 文件上传 */}
+                <div className="space-y-2">
+                  <Label>选择文件</Label>
+                  <div className="flex items-center gap-4">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".xlsx, .xls"
+                      onChange={handleFileChange}
+                      className="flex-1"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleDownloadTemplate}
+                      className="gap-2"
+                    >
+                      <Download className="h-4 w-4" />
+                      下载模板
+                    </Button>
+                  </div>
+                  {selectedFile && (
+                    <p className="text-sm text-muted-foreground">
+                      已选择：{selectedFile.name}
+                    </p>
+                  )}
+                </div>
+
+                {/* 错误提示 */}
+                {importError && (
+                  <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-destructive">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-medium">{importError}</p>
+                        {importErrors.length > 0 && (
+                          <div className="mt-2 space-y-2">
+                            <p className="text-sm">错误详情：</p>
+                            <ul className="text-sm space-y-1">
+                              {importErrors.map((error, index) => (
+                                <li key={index}>
+                                  第 {error.row} 行：{error.errors.join('、')}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 成功提示 */}
+                {importSuccess && (
+                  <div className="p-3 bg-success/10 border border-success/20 rounded-lg text-success">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+                      <p>{importSuccess}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* 导入说明 */}
+                <div className="p-3 bg-muted/50 rounded-lg">
+                  <h4 className="text-sm font-medium mb-2">导入说明：</h4>
+                  <ul className="text-sm space-y-1 text-muted-foreground">
+                    <li>• 支持 .xlsx 和 .xls 格式的Excel文件</li>
+                    <li>• 请按照模板格式填写数据，确保字段名称一致</li>
+                    <li>• 姓名为必填字段，其他字段为选填</li>
+                    <li>• 手机号和身份证号会自动加密存储</li>
+                    <li>• 工种信息请填写在 job_title 或 job_type 列</li>
+                  </ul>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsImportDialogOpen(false)
+                    resetImportState()
+                  }}
+                >
+                  取消
+                </Button>
+                <Button
+                  onClick={handleImport}
+                  disabled={importLoading || !selectedFile}
+                >
+                  {importLoading ? "导入中..." : "开始导入"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
           <Button variant="outline" className="gap-2">
             <Download className="h-4 w-4" />
             导出数据
@@ -315,10 +513,16 @@ export default function PersonnelArchivePage() {
                     </Select>
                   </div>
                   <div className="space-y-2">
+                    <Label>工种</Label>
+                    <Input value={formData.job_title} onChange={(e) => setFormData((d) => ({ ...d, job_title: e.target.value }))} placeholder="请输入工种" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
                     <Label>状态</Label>
                     <Select value={formData.status} onValueChange={(v) => setFormData((d) => ({ ...d, status: v }))}>
                       <SelectTrigger>
-                        <SelectValue />
+                        <SelectValue placeholder="状态" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="预注册">预注册</SelectItem>
@@ -460,6 +664,7 @@ export default function PersonnelArchivePage() {
                 <TableHead className="w-36">身份证号</TableHead>
                 <TableHead className="w-28">手机号</TableHead>
                 <TableHead className="min-w-[120px]">所属组织</TableHead>
+                <TableHead className="w-20">工种</TableHead>
                 <TableHead className="w-20">实名</TableHead>
                 <TableHead className="w-20">合同</TableHead>
                 <TableHead className="w-20">状态</TableHead>
@@ -488,6 +693,7 @@ export default function PersonnelArchivePage() {
                     <TableCell className="text-muted-foreground align-middle">{maskIdCard(person.id_card)}</TableCell>
                     <TableCell className="text-muted-foreground align-middle">{maskPhone(person.mobile)}</TableCell>
                     <TableCell className="align-middle">{person.org_name ?? "—"}</TableCell>
+                    <TableCell className="align-middle">{person.job_title ?? "—"}</TableCell>
                     <TableCell className="align-middle">
                       <Badge variant={person.id_card && person.mobile ? "default" : "secondary"}>
                         {person.id_card && person.mobile ? "已认证" : "未认证"}
@@ -595,10 +801,16 @@ export default function PersonnelArchivePage() {
                 </Select>
               </div>
               <div className="space-y-2">
+                <Label>工种</Label>
+                <Input value={formData.job_title} onChange={(e) => setFormData((d) => ({ ...d, job_title: e.target.value }))} placeholder="请输入工种" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
                 <Label>状态</Label>
                 <Select value={formData.status} onValueChange={(v) => setFormData((d) => ({ ...d, status: v }))}>
                   <SelectTrigger>
-                    <SelectValue />
+                    <SelectValue placeholder="状态" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="预注册">预注册</SelectItem>

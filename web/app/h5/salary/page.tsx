@@ -77,6 +77,8 @@ export default function SalaryPage() {
   const [confirmingId, setConfirmingId] = useState<number | null>(null)
   const [faceStep, setFaceStep] = useState<number | null>(null)
   const [workerId, setWorkerId] = useState<number | null>(null)
+  const [previewSettlement, setPreviewSettlement] = useState<PendingSettlement | null>(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
 
   const loadData = useCallback(async () => {
     try {
@@ -86,9 +88,36 @@ export default function SalaryPage() {
       ])
       setPendingList(pendingRes.list || [])
       setSalaryRecords((myRes.list || []).map((s: Record<string, unknown>) => mapSettlement(s as Parameters<typeof mapSettlement>[0])))
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("h5_pending_settlement_cache", JSON.stringify(pendingRes.list || []))
+        window.localStorage.setItem("h5_salary_records_cache", JSON.stringify(myRes.list || []))
+      }
     } catch {
-      setPendingList([])
-      setSalaryRecords([])
+      // 网络异常时优先尝试使用本地缓存，保证弱网环境下的基本可读性
+      if (typeof window !== "undefined") {
+        try {
+          const cachedPending = window.localStorage.getItem("h5_pending_settlement_cache")
+          const cachedSalary = window.localStorage.getItem("h5_salary_records_cache")
+          if (cachedPending) {
+            const list = JSON.parse(cachedPending) as PendingSettlement[]
+            setPendingList(list)
+          } else {
+            setPendingList([])
+          }
+          if (cachedSalary) {
+            const list = JSON.parse(cachedSalary) as unknown[]
+            setSalaryRecords(list.map((s) => mapSettlement(s as Parameters<typeof mapSettlement>[0])))
+          } else {
+            setSalaryRecords([])
+          }
+        } catch {
+          setPendingList([])
+          setSalaryRecords([])
+        }
+      } else {
+        setPendingList([])
+        setSalaryRecords([])
+      }
     }
   }, [])
 
@@ -208,29 +237,39 @@ export default function SalaryPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               {pendingList.map((s) => (
-                <div key={s.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
-                  <div>
-                    <p className="font-medium text-sm">{s.period_start} ～ {s.period_end}</p>
-                    <p className="text-lg font-semibold text-primary">¥{(s.amount_due ?? 0).toLocaleString()}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={confirmingId !== null}
-                      onClick={() => handleRejectSettlement(s.id)}
+                  <div
+                    key={s.id}
+                    className="flex items-center justify-between py-2 border-b border-border last:border-0"
+                  >
+                    <div
+                      className="flex flex-col cursor-pointer"
+                      onClick={() => {
+                        setPreviewSettlement(s)
+                        setPreviewOpen(true)
+                      }}
                     >
-                      驳回
-                    </Button>
-                    <Button
-                      size="sm"
-                      disabled={confirmingId !== null}
-                      onClick={() => handleConfirmSettlement(s.id!)}
-                    >
-                      {faceStep === s.id ? "验证中..." : confirmingId === s.id ? "提交中..." : "确认"}
-                    </Button>
+                      <p className="font-medium text-sm">{s.period_start} ～ {s.period_end}</p>
+                      <p className="text-lg font-semibold text-primary">¥{(s.amount_due ?? 0).toLocaleString()}</p>
+                      <p className="text-xs text-muted-foreground mt-1">点击查看详细考勤与结算信息</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={confirmingId !== null}
+                        onClick={() => handleRejectSettlement(s.id)}
+                      >
+                        驳回
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={confirmingId !== null}
+                        onClick={() => handleConfirmSettlement(s.id!)}
+                      >
+                        {faceStep === s.id ? "验证中..." : confirmingId === s.id ? "提交中..." : "确认"}
+                      </Button>
+                    </div>
                   </div>
-                </div>
               ))}
             </CardContent>
           </Card>
@@ -417,6 +456,50 @@ export default function SalaryPage() {
                   </>
                 )}
               </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* 结算单详情预览（考勤+确认提示） */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-sm mx-4">
+          <DialogHeader>
+            <DialogTitle>结算单详情</DialogTitle>
+          </DialogHeader>
+          {previewSettlement && (
+            <div className="space-y-4">
+              <div className="bg-muted/40 rounded-lg p-3 text-sm space-y-1">
+                <p>结算周期：{previewSettlement.period_start} ～ {previewSettlement.period_end}</p>
+                <p>应发金额：<span className="font-semibold text-primary">¥{(previewSettlement.amount_due ?? 0).toLocaleString()}</span></p>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                详细考勤明细可在「考勤」和「工资查询」中查看。本次确认将作为电子结算记录存档，不可随意篡改。
+              </p>
+              <div className="rounded-lg border border-dashed border-border p-3 text-center text-xs text-muted-foreground">
+                电子签名：确认即视为已在结算单上进行电子签名
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setPreviewOpen(false)}
+                >
+                  取消
+                </Button>
+                <Button
+                  className="flex-1"
+                  disabled={confirmingId !== null}
+                  onClick={() => {
+                    setPreviewOpen(false)
+                    if (previewSettlement?.id) {
+                      handleConfirmSettlement(previewSettlement.id)
+                    }
+                  }}
+                >
+                  {confirmingId === previewSettlement.id ? "提交中..." : "确认结算"}
+                </Button>
+              </div>
             </div>
           )}
         </DialogContent>

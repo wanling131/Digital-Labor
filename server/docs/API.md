@@ -37,6 +37,7 @@
 |------|------|:----:|------|
 | GET | /api/health | 否 | 健康检查，返回 `{ ok: true }` |
 | GET | /api | 否 | 接口元信息，返回 `{ name, api, docs }` |
+| GET | /api/sys/feature-status | 否 | 能力开关：`{ faceVerify: "aliyun" 或 "mock" }`，供前端展示是否已接入真人脸 |
 
 ---
 
@@ -105,7 +106,7 @@
 | GET | /api/person/status | 管理端 | 各状态人数 `{ list: [{ status, count }] }` |
 | POST | /api/person/status/batch | 管理端 | body `{ ids: number[], status }`，批量改状态（含进场/离场时联动 on_site） |
 | GET | /api/person/auth | 管理端 | 认证相关占位，当前返回 `{ list: [] }` |
-| POST | /api/person/face-verify | 管理端/工人端 | body `{ image?, person_id? }`，人脸核验占位；对接第三方前返回 `{ ok: true }` |
+| POST | /api/person/face-verify | 管理端/工人端 | 人脸核验。配置 `ALIYUN_ACCESS_KEY_*` 后走阿里云；否则 mock。body：`mode`（living/compare/full）、`image`（base64，living/compare 必填）、`person_id`（可选，通过后写 face_verified）；compare 需 `target_image`；full 需 `cert_name`、`cert_no`、`meta_info`。返回 `{ ok, passed, message }`。 |
 | GET | /api/person/:id | 管理端 | 单条人员（简略） |
 
 ---

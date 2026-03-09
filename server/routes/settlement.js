@@ -80,8 +80,16 @@ router.post('/confirm/:id', (req, res) => {
     const paid = amount_paid != null && parseFloat(amount_paid) > 0
     updates.push('status = ?')
     values.push(paid ? '已发放' : '已确认')
+    updates.push('confirm_at = datetime(\'now\')')
+    updates.push('confirm_method = ?')
+    // 管理端确认 or H5 自助确认
+    const method = req.user?.workerId ? 'worker_h5' : (req.user?.userId ? 'admin_pc' : 'unknown')
+    values.push(method)
     if (amount_due != null) { updates.push('amount_due = ?'); values.push(parseFloat(amount_due)) }
     if (amount_paid != null) { updates.push('amount_paid = ?'); values.push(parseFloat(amount_paid)) }
+    
+    // 结算单确认后自动更新人员状态为已离场
+    db.prepare('UPDATE person SET status = "已离场", on_site = 0, updated_at = datetime(\'now\') WHERE id = ?').run(st.person_id)
   } else if (action === 'reject') {
     updates.push('status = ?')
     values.push('已驳回')

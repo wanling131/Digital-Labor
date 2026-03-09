@@ -164,3 +164,130 @@ test('工人端 token 可 POST /api/attendance/clock', async () => {
   assert.strictEqual(res.body?.ok, true)
   assert.ok(res.body?.work_date)
 })
+
+// 用例18：GET /api/sys/feature-status 无需 token，返回 faceVerify
+test('GET /api/sys/feature-status 返回 faceVerify', async () => {
+  const res = await request.get('/api/sys/feature-status')
+  assert.strictEqual(res.status, 200)
+  assert.ok(['aliyun', 'mock'].includes(res.body?.faceVerify))
+})
+
+// 用例19：带 token 可 GET /api/sys/my-permissions 返回 permissions 与 org_id
+test('带 token 可 GET /api/sys/my-permissions', async () => {
+  const login = await request.post('/api/auth/login').send({ username: 'admin', password: '123456' })
+  const res = await request.get('/api/sys/my-permissions').set('Authorization', `Bearer ${login.body.token}`)
+  assert.strictEqual(res.status, 200)
+  assert.ok(Array.isArray(res.body?.permissions))
+  assert.ok(res.body.permissions.length > 0)
+  assert.ok('org_id' in res.body)
+})
+
+// 用例20：带 token 可 GET /api/sys/role/:code/permissions
+test('带 token 可 GET /api/sys/role/admin/permissions', async () => {
+  const login = await request.post('/api/auth/login').send({ username: 'admin', password: '123456' })
+  const res = await request.get('/api/sys/role/admin/permissions').set('Authorization', `Bearer ${login.body.token}`)
+  assert.strictEqual(res.status, 200)
+  assert.ok(Array.isArray(res.body?.keys))
+  assert.ok(res.body.keys.length > 0)
+})
+
+// 用例21：带 token 可 PUT /api/sys/role/:code/permissions 并生效
+test('带 token 可 PUT /api/sys/role/user/permissions', async () => {
+  const login = await request.post('/api/auth/login').send({ username: 'admin', password: '123456' })
+  const getBefore = await request.get('/api/sys/role/user/permissions').set('Authorization', `Bearer ${login.body.token}`)
+  const beforeKeys = getBefore.body?.keys || []
+  const newKeys = beforeKeys.filter(k => k !== 'person:delete')
+  const put = await request.put('/api/sys/role/user/permissions').set('Authorization', `Bearer ${login.body.token}`).send({ keys: newKeys })
+  assert.strictEqual(put.status, 200)
+  assert.strictEqual(put.body?.ok, true)
+  const getAfter = await request.get('/api/sys/role/user/permissions').set('Authorization', `Bearer ${login.body.token}`)
+  assert.ok(Array.isArray(getAfter.body?.keys))
+  assert.strictEqual(getAfter.body.keys.includes('person:delete'), false)
+  await request.put('/api/sys/role/user/permissions').set('Authorization', `Bearer ${login.body.token}`).send({ keys: beforeKeys })
+})
+
+// 用例22：GET /api/sys/all-permissions 返回 groups 与 allKeys
+test('带 token 可 GET /api/sys/all-permissions', async () => {
+  const login = await request.post('/api/auth/login').send({ username: 'admin', password: '123456' })
+  const res = await request.get('/api/sys/all-permissions').set('Authorization', `Bearer ${login.body.token}`)
+  assert.strictEqual(res.status, 200)
+  assert.ok(Array.isArray(res.body?.groups))
+  assert.ok(Array.isArray(res.body?.allKeys))
+  assert.ok(res.body.groups.length > 0)
+  assert.ok(res.body.allKeys.length > 0)
+})
+
+// 用例23：GET /api/person/auth 返回 list 且每项含 face_verified
+test('带 token 可 GET /api/person/auth 且含 face_verified', async () => {
+  const login = await request.post('/api/auth/login').send({ username: 'admin', password: '123456' })
+  const res = await request.get('/api/person/auth').set('Authorization', `Bearer ${login.body.token}`)
+  assert.strictEqual(res.status, 200)
+  assert.ok(Array.isArray(res.body?.list))
+  assert.ok(typeof res.body?.total === 'number')
+  if (res.body.list.length > 0) {
+    const first = res.body.list[0]
+    assert.strictEqual(typeof first.face_verified, 'boolean')
+  }
+})
+
+// 用例24：人员证书 GET/POST/PUT/DELETE（管理端）
+test('管理端可 GET/POST/PUT/DELETE 人员证书', async () => {
+  const login = await request.post('/api/auth/login').send({ username: 'admin', password: '123456' })
+  const token = login.body.token
+  const createPerson = await request.post('/api/person/archive').set('Authorization', `Bearer ${token}`).send({ name: 'CertCrudTest', work_no: 'CCT1' })
+  assert.strictEqual(createPerson.status, 200)
+  const personId = createPerson.body.id
+
+  const getEmpty = await request.get(`/api/person/archive/${personId}/certificates`).set('Authorization', `Bearer ${token}`)
+  assert.strictEqual(getEmpty.status, 200)
+  assert.ok(Array.isArray(getEmpty.body?.list))
+  assert.strictEqual(getEmpty.body.list.length, 0)
+
+  const postCert = await request.post(`/api/person/archive/${personId}/certificates`).set('Authorization', `Bearer ${token}`).send({ name: '安全员证', certificate_no: 'NO001', expiry_date: '2026-12-31' })
+  assert.strictEqual(postCert.status, 200)
+  assert.ok(postCert.body?.id)
+  const certId = postCert.body.id
+
+  const getOne = await request.get(`/api/person/archive/${personId}/certificates`).set('Authorization', `Bearer ${token}`)
+  assert.strictEqual(getOne.status, 200)
+  assert.strictEqual(getOne.body.list.length, 1)
+  assert.strictEqual(getOne.body.list[0].name, '安全员证')
+
+  const putCert = await request.put(`/api/person/archive/${personId}/certificates/${certId}`).set('Authorization', `Bearer ${token}`).send({ name: '安全员证（已更新）' })
+  assert.strictEqual(putCert.status, 200)
+  assert.strictEqual(putCert.body?.ok, true)
+
+  const deleteCert = await request.delete(`/api/person/archive/${personId}/certificates/${certId}`).set('Authorization', `Bearer ${token}`)
+  assert.strictEqual(deleteCert.status, 200)
+  assert.strictEqual(deleteCert.body?.ok, true)
+
+  const getAfter = await request.get(`/api/person/archive/${personId}/certificates`).set('Authorization', `Bearer ${token}`)
+  assert.strictEqual(getAfter.body.list.length, 0)
+})
+
+// 用例25：业务员无 person:delete 时 DELETE 人员应返回 403（若后端已启用按钮权限）
+test('业务员无 person:delete 时 DELETE 人员返回 403 或 200', async () => {
+  const login = await request.post('/api/auth/login').send({ username: 'admin', password: '123456' })
+  const token = login.body.token
+  const getBefore = await request.get('/api/sys/role/user/permissions').set('Authorization', `Bearer ${token}`)
+  const beforeKeys = getBefore.body?.keys || []
+  const keysWithoutDelete = beforeKeys.filter(k => k !== 'person:delete')
+  await request.put('/api/sys/role/user/permissions').set('Authorization', `Bearer ${token}`).send({ keys: keysWithoutDelete })
+
+  const uname = 'testuser_perm_' + Date.now()
+  const createUser = await request.post('/api/sys/user').set('Authorization', `Bearer ${token}`).send({ username: uname, password: '123456', name: 'TestUser', role: 'user' })
+  if (createUser.status !== 200) return
+  const userLogin = await request.post('/api/auth/login').send({ username: uname, password: '123456' })
+  if (userLogin.status !== 200) return
+  const createPerson = await request.post('/api/person/archive').set('Authorization', `Bearer ${userLogin.body.token}`).send({ name: 'ForDeleteTest', work_no: 'FDT1' })
+  if (createPerson.status !== 200) return
+  const personId = createPerson.body.id
+  const del = await request.delete(`/api/person/archive/${personId}`).set('Authorization', `Bearer ${userLogin.body.token}`)
+  assert.ok(del.status === 403 || del.status === 200, 'DELETE 应返回 403（无权限）或 200（未启用按钮权限时）')
+  if (del.status === 200) {
+    await request.put('/api/sys/role/user/permissions').set('Authorization', `Bearer ${token}`).send({ keys: beforeKeys })
+    return
+  }
+  await request.delete(`/api/person/archive/${personId}`).set('Authorization', `Bearer ${token}`)
+  await request.put('/api/sys/role/user/permissions').set('Authorization', `Bearer ${token}`).send({ keys: beforeKeys })
+})

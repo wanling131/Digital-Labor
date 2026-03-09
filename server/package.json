@@ -5,10 +5,18 @@
   "scripts": {
     "dev": "node --watch server.js",
     "start": "node server.js",
-    "test": "node --test test/",
+    "test": "node --test test/api.test.mjs test/features.test.mjs",
+    "test:api": "node --test test/api.test.mjs",
+    "test:features": "node --test test/features.test.mjs",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "test:all": "node test/run-tests.js all",
+    "test:report": "node test/generate-report.js",
     "seed": "node scripts/seed.js"
   },
   "devDependencies": {
+    "@playwright/test": "^1.40.0",
     "supertest": "^6.3.4"
   },
   "dependencies": {

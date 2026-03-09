@@ -41,6 +41,7 @@ import {
   Trash2,
 } from "lucide-react"
 import { api } from "@/lib/api"
+import { HomeButton } from "@/components/pc/home-button"
 
 const importHistory = [
   {
@@ -153,9 +154,12 @@ export default function AttendanceImportPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">考勤数据接入</h1>
-          <p className="text-muted-foreground">支持Excel批量导入，数据自动清洗与排重</p>
+        <div className="flex items-center gap-4">
+          <HomeButton />
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">考勤数据接入</h1>
+            <p className="text-muted-foreground">支持Excel批量导入，数据自动清洗与排重</p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" className="gap-2">

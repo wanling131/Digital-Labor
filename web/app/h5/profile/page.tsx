@@ -30,6 +30,13 @@ import {
 import { cn } from "@/lib/utils"
 import { apiWorker, setWorkerToken } from "@/lib/api"
 import { useRouter } from "next/navigation"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { FaceVerify } from "@/components/h5/face-verify"
 
 const menuItems = [
   {
@@ -82,7 +89,7 @@ export default function ProfilePage() {
   const router = useRouter()
   const [notificationEnabled, setNotificationEnabled] = useState(true)
   const [workerId, setWorkerId] = useState<number | null>(null)
-  const [faceVerifying, setFaceVerifying] = useState(false)
+  const [faceDialogOpen, setFaceDialogOpen] = useState(false)
   const [faceResult, setFaceResult] = useState<"idle" | "success" | "fail">("idle")
   const [me, setMe] = useState<{ name?: string; work_no?: string; org_name?: string; mobile?: string; status?: string; id_card?: string; bank_card?: string } | null>(null)
   const [certificates, setCertificates] = useState<CertItem[]>([])
@@ -102,19 +109,19 @@ export default function ProfilePage() {
       .catch(() => setCertificates([]))
   }, [])
 
-  const handleFaceVerify = useCallback(async () => {
+  const handleFaceVerifyOpen = useCallback(() => {
     if (workerId == null) return
-    setFaceVerifying(true)
-    setFaceResult("idle")
-    try {
-      await apiWorker("/api/person/face-verify", { method: "POST", body: { person_id: workerId } })
-      setFaceResult("success")
-    } catch {
-      setFaceResult("fail")
-    } finally {
-      setFaceVerifying(false)
-    }
+    setFaceDialogOpen(true)
   }, [workerId])
+
+  const handleFaceVerifySuccess = useCallback(() => {
+    setFaceResult("success")
+    setFaceDialogOpen(false)
+  }, [])
+
+  const handleFaceVerifyCancel = useCallback(() => {
+    setFaceDialogOpen(false)
+  }, [])
 
   const handleRefresh = useCallback(async () => {
     await new Promise(resolve => setTimeout(resolve, 1000))
@@ -210,15 +217,29 @@ export default function ProfilePage() {
                 </Badge>
               )}
             </div>
-            <p className="text-sm text-muted-foreground mb-3">活体检测与人脸采集，对接第三方后可完成实名认证</p>
+            <p className="text-sm text-muted-foreground mb-3">活体检测与人脸采集，完成后可标记实名认证（需配置阿里云密钥后使用真实服务）</p>
             <Button
               variant="outline"
               className="w-full"
-              disabled={faceVerifying || workerId == null}
-              onClick={handleFaceVerify}
+              disabled={workerId == null}
+              onClick={handleFaceVerifyOpen}
             >
-              {faceVerifying ? "验证中..." : "开始人脸采集（占位）"}
+              开始人脸采集
             </Button>
+            <Dialog open={faceDialogOpen} onOpenChange={setFaceDialogOpen}>
+              <DialogContent className="max-w-sm mx-auto rounded-xl">
+                <DialogHeader>
+                  <DialogTitle>人脸活体检测</DialogTitle>
+                </DialogHeader>
+                <FaceVerify
+                  mode="living"
+                  personId={workerId ?? undefined}
+                  onSuccess={handleFaceVerifySuccess}
+                  onCancel={handleFaceVerifyCancel}
+                  onError={() => {}}
+                />
+              </DialogContent>
+            </Dialog>
           </CardContent>
         </Card>
       </div>

@@ -1,6 +1,6 @@
-# Excel 功能点完成情况检查
+# Digital Labor · Excel 功能点完成情况检查
 
-> 对照《20260302数字劳务功能报价.xlsx》中 29 项功能点逐条核对实现状态。数据来源：功能点/excel_content_utf8.txt、功能点/需求与实现对比.md。
+> 对照《20260302数字劳务功能报价.xlsx》中 29 项功能点逐条核对实现状态。数据来源：功能点/excel_content_utf8.txt、功能点/需求与实现对比.md。文档索引见 [docs/README.md](./README.md)。
 
 ---
 

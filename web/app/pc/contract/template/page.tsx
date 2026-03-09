@@ -41,6 +41,7 @@ type TemplateItem = {
   name: string
   file_path: string | null
   version: number
+  is_visual: boolean
   created_at: string
 }
 
@@ -126,52 +127,61 @@ export default function ContractTemplatePage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">合同模板</h1>
-          <p className="text-muted-foreground">管理合同模板，支持版本控制；可视化编辑对接电子签后开放</p>
+          <p className="text-muted-foreground">管理合同模板，支持版本控制和可视化编辑</p>
         </div>
-        <Dialog open={isUploadOpen} onOpenChange={(open) => { setIsUploadOpen(open); if (!open) setUploadError(null) }}>
-          <DialogTrigger asChild>
-            <Button className="gap-2">
-              <Plus className="h-4 w-4" />
-              上传模板
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>上传合同模板</DialogTitle>
-              <DialogDescription>支持上传文件或仅填写名称（后续可补传）</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              {uploadError && <p className="text-sm text-destructive">{uploadError}</p>}
-              <div className="space-y-2">
-                <Label>模板名称</Label>
-                <Input placeholder="请输入模板名称" value={uploadName} onChange={(e) => setUploadName(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>上传文件（可选）</Label>
-                <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-border p-6">
-                  <input
-                    type="file"
-                    className="hidden"
-                    id="template-file"
-                    accept=".pdf,.doc,.docx"
-                    onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
-                  />
-                  <label htmlFor="template-file" className="cursor-pointer text-center">
-                    <Upload className="mx-auto h-8 w-8 text-muted-foreground" />
-                    <p className="mt-2 text-sm text-muted-foreground">{uploadFile ? uploadFile.name : "点击选择 PDF、DOC、DOCX"}</p>
-                  </label>
+        <div className="flex space-x-4">
+          <Button 
+            className="gap-2"
+            onClick={() => window.location.href = '/pc/contract/template/edit/new'}
+          >
+            <Plus className="h-4 w-4" />
+            创建可视化模板
+          </Button>
+          <Dialog open={isUploadOpen} onOpenChange={(open) => { setIsUploadOpen(open); if (!open) setUploadError(null) }}>
+            <DialogTrigger asChild>
+              <Button className="gap-2">
+                <Upload className="h-4 w-4" />
+                上传模板
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>上传合同模板</DialogTitle>
+                <DialogDescription>支持上传文件或仅填写名称（后续可补传）</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                {uploadError && <p className="text-sm text-destructive">{uploadError}</p>}
+                <div className="space-y-2">
+                  <Label>模板名称</Label>
+                  <Input placeholder="请输入模板名称" value={uploadName} onChange={(e) => setUploadName(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>上传文件（可选）</Label>
+                  <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-border p-6">
+                    <input
+                      type="file"
+                      className="hidden"
+                      id="template-file"
+                      accept=".pdf,.doc,.docx"
+                      onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+                    />
+                    <label htmlFor="template-file" className="cursor-pointer text-center">
+                      <Upload className="mx-auto h-8 w-8 text-muted-foreground" />
+                      <p className="mt-2 text-sm text-muted-foreground">{uploadFile ? uploadFile.name : "点击选择 PDF、DOC、DOCX"}</p>
+                    </label>
+                  </div>
                 </div>
               </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsUploadOpen(false)}>取消</Button>
-              <Button onClick={handleUpload} disabled={uploading}>
-                {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                确认
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsUploadOpen(false)}>取消</Button>
+                <Button onClick={handleUpload} disabled={uploading}>
+                  {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  确认
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -205,11 +215,11 @@ export default function ContractTemplatePage() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">可视化编辑</p>
-                <p className="text-xs text-muted-foreground">对接后开放</p>
+                <p className="text-sm font-medium text-muted-foreground">可视化模板</p>
+                <p className="text-2xl font-bold">{list.filter((t) => t.is_visual).length}</p>
               </div>
-              <div className="rounded-full bg-muted p-3">
-                <Edit className="h-5 w-5 text-muted-foreground" />
+              <div className="rounded-full bg-primary/10 p-3">
+                <Edit className="h-5 w-5 text-primary" />
               </div>
             </div>
           </CardContent>
@@ -231,12 +241,13 @@ export default function ContractTemplatePage() {
                       <FileText className="h-6 w-6 text-primary" />
                     </div>
                     <div>
-                      <CardTitle className="text-base">{t.name}</CardTitle>
-                      <CardDescription className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-xs">v{t.version}</Badge>
-                        {t.file_path ? <span className="text-xs text-accent">已上传</span> : <span className="text-xs text-muted-foreground">未上传</span>}
-                      </CardDescription>
-                    </div>
+                    <CardTitle className="text-base">{t.name}</CardTitle>
+                    <CardDescription className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-xs">v{t.version}</Badge>
+                      {t.is_visual && <Badge className="text-xs bg-primary/10 text-primary">可视化</Badge>}
+                      {t.file_path ? <span className="text-xs text-accent">已上传</span> : <span className="text-xs text-muted-foreground">未上传</span>}
+                    </CardDescription>
+                  </div>
                   </div>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -253,9 +264,12 @@ export default function ContractTemplatePage() {
                         {previewingId === t.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
                         {t.file_path ? "预览" : "预览（需先上传文件）"}
                       </DropdownMenuItem>
-                      <DropdownMenuItem className="gap-2" disabled>
+                      <DropdownMenuItem 
+                        className="gap-2"
+                        onClick={() => window.location.href = `/pc/contract/template/edit/${t.id}`}
+                      >
                         <Edit className="h-4 w-4" />
-                        可视化编辑（占位，后续实现）
+                        {t.is_visual ? "编辑模板" : "可视化编辑"}
                       </DropdownMenuItem>
                       <DropdownMenuItem className="gap-2" disabled>
                         <Copy className="h-4 w-4" />

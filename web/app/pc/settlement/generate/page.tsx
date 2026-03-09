@@ -43,6 +43,7 @@ import {
   Wallet,
 } from "lucide-react"
 import { api } from "@/lib/api"
+import { HomeButton } from "@/components/pc/home-button"
 
 interface SettlementItem {
   id: number
@@ -212,9 +213,12 @@ export default function SettlementGeneratePage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">结算单生成与确认</h1>
-          <p className="text-muted-foreground">基于工时生成结算单，在线审核与调整</p>
+        <div className="flex items-center gap-4">
+          <HomeButton />
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">结算单生成与确认</h1>
+            <p className="text-muted-foreground">基于工时生成结算单，在线审核与调整</p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <Input

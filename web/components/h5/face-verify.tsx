@@ -121,6 +121,10 @@ export function FaceVerify({
         image: base64Data
       }
 
+      if (personId != null) {
+        requestBody.person_id = personId
+      }
+
       if (mode === 'compare' && targetImage) {
         requestBody.target_image = targetImage
       }

@@ -49,6 +49,8 @@ type AuthRecord = {
   id_filled: boolean
   mobile_filled: boolean
   filled: boolean
+  face_verified: boolean
+  face_verified_at?: string
   auth_review_status?: "pending" | "approved" | "rejected"
 }
 
@@ -112,6 +114,8 @@ export default function CertificationPage() {
   const filteredRecords = list
 
   const filledCount = list.filter((r) => r.filled).length
+  const faceVerifiedCount = list.filter((r) => r.face_verified).length
+
   const getStatusBadge = (filled: boolean) => (
     <Badge variant="outline" className={filled ? statusConfig.passed.color : statusConfig.pending.color}>
       {filled ? <CheckCircle className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
@@ -119,11 +123,18 @@ export default function CertificationPage() {
     </Badge>
   )
 
+  const getFaceBadge = (verified: boolean) => (
+    <Badge variant="outline" className={verified ? statusConfig.passed.color : statusConfig.pending.color}>
+      {verified ? <CheckCircle className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
+      {verified ? "已认证" : "未认证"}
+    </Badge>
+  )
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-foreground">认证管理</h1>
-        <p className="text-muted-foreground">查看人员身份证、手机号登记及补全状态；人脸/电子签对接后可在此展示</p>
+        <p className="text-muted-foreground">查看人员身份证、手机号登记及人脸认证状态</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
@@ -163,8 +174,8 @@ export default function CertificationPage() {
               </div>
               <div className="min-w-0">
                 <p className="text-sm font-medium text-muted-foreground min-h-[2.5rem]">人脸采集</p>
-                <p className="text-2xl font-bold">—</p>
-                <p className="text-xs text-muted-foreground">对接后展示</p>
+                <p className="text-2xl font-bold">{faceVerifiedCount}</p>
+                <p className="text-xs text-muted-foreground">已采集 {faceVerifiedCount} / {total} 人</p>
               </div>
             </div>
           </CardContent>
@@ -190,7 +201,7 @@ export default function CertificationPage() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle>认证记录</CardTitle>
-              <CardDescription>按身份证/手机是否已登记筛选</CardDescription>
+              <CardDescription>按身份证/手机/人脸认证状态筛选</CardDescription>
             </div>
             <Tabs value={filledTab} onValueChange={(v) => setFilledTab(v as "all" | "1" | "0")}>
               <TabsList>
@@ -227,7 +238,7 @@ export default function CertificationPage() {
                   <TableHead>手机号</TableHead>
                   <TableHead>身份证</TableHead>
                   <TableHead>手机绑定</TableHead>
-                  <TableHead>综合</TableHead>
+                  <TableHead>人脸认证</TableHead>
                   <TableHead>审核状态</TableHead>
                   <TableHead className="text-right">操作</TableHead>
                 </TableRow>
@@ -250,7 +261,7 @@ export default function CertificationPage() {
                     <TableCell className="text-sm">{record.mobile || "—"}</TableCell>
                     <TableCell>{getStatusBadge(record.id_filled)}</TableCell>
                     <TableCell>{getStatusBadge(record.mobile_filled)}</TableCell>
-                    <TableCell>{getStatusBadge(record.filled)}</TableCell>
+                    <TableCell>{getFaceBadge(record.face_verified)}</TableCell>
                     <TableCell>
                       {(() => {
                         const s = record.auth_review_status || "pending"
@@ -293,7 +304,7 @@ export default function CertificationPage() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>认证详情 - {selectedRecord?.name}</DialogTitle>
-            <DialogDescription>身份证/手机登记状态；人脸与电子签对接后可在此审核</DialogDescription>
+            <DialogDescription>身份证/手机/人脸认证状态详情</DialogDescription>
           </DialogHeader>
           {selectedRecord && (
             <div className="space-y-4 py-4">
@@ -315,8 +326,20 @@ export default function CertificationPage() {
                   <p className="text-sm">{selectedRecord.mobile || "未登记"}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">状态</p>
-                  {getStatusBadge(selectedRecord.filled)}
+                  <p className="text-sm text-muted-foreground">身份证登记</p>
+                  {getStatusBadge(selectedRecord.id_filled)}
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">手机绑定</p>
+                  {getStatusBadge(selectedRecord.mobile_filled)}
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">人脸认证</p>
+                  {getFaceBadge(selectedRecord.face_verified)}
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">认证时间</p>
+                  <p className="text-sm">{selectedRecord.face_verified_at || "—"}</p>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">审核状态</p>
@@ -333,7 +356,6 @@ export default function CertificationPage() {
                   })()}
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground">人脸采集、电子签名等对接第三方后在此展示与审核</p>
               {(selectedRecord.auth_review_status === "pending" || !selectedRecord.auth_review_status) && (
                 <div className="flex gap-2 pt-2">
                   <Button

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { PageHeader } from "@/components/h5/page-header"
 import { BottomNav } from "@/components/h5/bottom-nav"
 import { FaceVerify } from "@/components/h5/face-verify"
+import { SignaturePad } from "@/components/h5/signature-pad"
 import { 
   CheckCircle2, 
   Clock, 
@@ -19,6 +20,7 @@ import {
   Loader2,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { apiWorker } from "@/lib/api"
 
 const steps = [
   {
@@ -57,6 +59,8 @@ export default function ActivationPage() {
   const [loading, setLoading] = useState(false)
   const [faceVerified, setFaceVerified] = useState(false)
   const [personInfo, setPersonInfo] = useState<any>(null)
+  const [mobileInput, setMobileInput] = useState("")
+  const [signature, setSignature] = useState<string | null>(null)
   const router = useRouter()
 
   // 获取当前登录用户信息
@@ -78,6 +82,10 @@ export default function ActivationPage() {
         if (response.ok) {
           const data = await response.json()
           setPersonInfo(data)
+          // 预填手机号
+          if (data.mobile) {
+            setMobileInput(String(data.mobile))
+          }
         }
       } catch (error) {
         console.error('获取用户信息失败:', error)
@@ -89,13 +97,30 @@ export default function ActivationPage() {
 
   const handleNextStep = async () => {
     setLoading(true)
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    setLoading(false)
-
-    if (currentStep < 4) {
-      setCurrentStep(currentStep + 1)
-    } else {
-      router.push("/h5")
+    try {
+      if (currentStep === 3) {
+        // 信息补全保存
+        try {
+          await apiWorker("/api/person/me/activation", {
+            method: "POST",
+            body: {
+              id_card: personInfo?.id_card,
+              mobile: mobileInput.trim() || undefined,
+              signature_image: signature || undefined,
+            },
+          })
+        } catch (e) {
+          console.error("保存激活信息失败:", e)
+        }
+      }
+      await new Promise(resolve => setTimeout(resolve, 800))
+      if (currentStep < 4) {
+        setCurrentStep(currentStep + 1)
+      } else {
+        router.push("/h5")
+      }
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -247,7 +272,7 @@ export default function ActivationPage() {
                   <label className="text-sm font-medium block mb-2">身份证号</label>
                   <Input
                     placeholder="请输入身份证号"
-                    defaultValue="310101199001011234"
+                    defaultValue={personInfo?.id_card || ""}
                     disabled
                   />
                 </div>
@@ -257,18 +282,17 @@ export default function ActivationPage() {
                   <Input
                     type="tel"
                     placeholder="请输入手机号"
-                    defaultValue="18800000000"
+                    value={mobileInput}
+                    onChange={(e) => setMobileInput(e.target.value)}
                   />
                 </div>
 
                 <div>
                   <label className="text-sm font-medium block mb-2">电子签名 *</label>
-                  <div className="border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 transition-colors">
-                    <div className="text-muted-foreground text-sm space-y-2">
-                      <p>👆 点击或长按进行签名</p>
-                      <p className="text-xs">在虚线框内进行手写签名</p>
-                    </div>
-                  </div>
+                  <SignaturePad
+                    value={signature}
+                    onChange={setSignature}
+                  />
                 </div>
               </div>
 
@@ -313,7 +337,7 @@ export default function ActivationPage() {
               <div className="bg-accent/10 rounded-lg p-4 space-y-2">
                 <p className="text-sm font-medium">您现在可以:</p>
                 <ul className="text-sm text-muted-foreground space-y-1">
-                  <li>✓ 进行每日考勤打卡</li>
+                  <li>✓ 查看考勤记录</li>
                   <li>✓ 查看和签署合同</li>
                   <li>✓ 查询工资和工时</li>
                   <li>✓ 管理个人信息</li>

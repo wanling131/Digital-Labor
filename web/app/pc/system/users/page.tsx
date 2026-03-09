@@ -133,6 +133,7 @@ export default function UsersPage() {
   const [formRole, setFormRole] = useState("admin")
   const [formEnabled, setFormEnabled] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [statusFilter, setStatusFilter] = useState("all")
 
   const fetchList = useCallback(async () => {
     try {
@@ -156,9 +157,13 @@ export default function UsersPage() {
   useEffect(() => { fetchList() }, [fetchList])
   useEffect(() => { fetchOrg() }, [fetchOrg])
 
-  const filtered = list.filter((u) =>
-    (u.username ?? "").includes(searchTerm) || (u.name ?? "").includes(searchTerm) || (u.org_name ?? "").includes(searchTerm)
-  )
+  const filtered = list.filter((u) => {
+    const matchesSearch = (u.username ?? "").includes(searchTerm) || (u.name ?? "").includes(searchTerm) || (u.org_name ?? "").includes(searchTerm)
+    const matchesStatus = statusFilter === "all" || 
+      (statusFilter === "active" && (u.enabled ?? 1)) || 
+      (statusFilter === "inactive" && !(u.enabled ?? 1))
+    return matchesSearch && matchesStatus
+  })
 
   const handleCreate = async () => {
     if (!formUsername || !formPassword) return
@@ -348,9 +353,9 @@ export default function UsersPage() {
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
               </div>
-              <Select defaultValue="all">
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-32">
-                  <SelectValue />
+                  <SelectValue placeholder="状态" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部状态</SelectItem>

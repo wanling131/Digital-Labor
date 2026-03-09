@@ -230,7 +230,7 @@ export const mockFaceVerifyService = {
   },
 
   async detectLivingFace(params) {
-    console.log('[Mock] 活体检测')
+    console.log('[Mock] 活体检测', params)
     return {
       passed: true,
       score: 99.8,
@@ -250,6 +250,11 @@ if (useRealService) {
   console.log('[FaceVerify] 使用阿里云人脸验证服务')
 } else {
   console.log('[FaceVerify] 使用模拟人脸验证服务（开发测试用）')
+}
+
+/** 供 GET /api/sys/feature-status 使用：当前人脸核验为真实阿里云还是 mock */
+export function getFaceVerifyMode() {
+  return useRealService ? 'aliyun' : 'mock'
 }
 
 export default useRealService ? faceVerifyService : mockFaceVerifyService

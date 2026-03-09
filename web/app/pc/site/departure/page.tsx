@@ -43,6 +43,7 @@ import {
   Clock,
 } from "lucide-react"
 import { api } from "@/lib/api"
+import { HomeButton } from "@/components/pc/home-button"
 
 interface PersonOnSite {
   id: number
@@ -131,9 +132,12 @@ export default function DeparturePage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">离场登记</h1>
-          <p className="text-muted-foreground">管理人员离场手续办理与记录</p>
+        <div className="flex items-center gap-4">
+          <HomeButton />
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">离场登记</h1>
+            <p className="text-muted-foreground">管理人员离场手续办理与记录</p>
+          </div>
         </div>
         <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
           <DialogTrigger asChild>
@@ -261,7 +265,7 @@ export default function DeparturePage() {
             <div className="flex gap-2">
               <Select defaultValue="all">
                 <SelectTrigger className="w-32">
-                  <SelectValue />
+                  <SelectValue placeholder="状态" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部状态</SelectItem>
@@ -271,7 +275,7 @@ export default function DeparturePage() {
               </Select>
               <Select defaultValue="all">
                 <SelectTrigger className="w-40">
-                  <SelectValue />
+                  <SelectValue placeholder="项目" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部项目</SelectItem>

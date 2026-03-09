@@ -18,6 +18,7 @@ export default function H5LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const [projectKey, setProjectKey] = useState<string | null>(null)
   const router = useRouter()
 
   const handlePhoneLogin = async (e: React.FormEvent) => {
@@ -84,11 +85,40 @@ export default function H5LoginPage() {
   }
 
   const handleQRCodeLogin = async () => {
+    setError("")
     setLoading(true)
     try {
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      setWorkerToken("demo")
-      router.push("/h5/activation")
+      // 现场扫码通常由微信/浏览器完成，此处只负责根据已解析的 scene 调用后端
+      // 为了简单起见，先从 URL 中读取 ?scene=xxx 作为项目级/人员级标识
+      const url = new URL(window.location.href)
+      const scene = url.searchParams.get("scene")
+      if (!scene) {
+        setError("当前链接缺少二维码参数，请从项目二维码重新进入")
+        return
+      }
+
+      const res = await fetch("/api/auth/worker-qrcode-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scene }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError((data as { message?: string }).message || "二维码登录失败")
+        return
+      }
+
+      const mode = (data as { mode?: string }).mode
+      if (mode === "person") {
+        const token = (data as { token?: string }).token
+        if (token) setWorkerToken(token)
+        router.push("/h5/activation")
+      } else {
+        const key = (data as { project_key?: string }).project_key ?? null
+        setProjectKey(key)
+        // 未直接绑定人员，继续走激活流程，在激活页可结合 projectKey 做后续逻辑
+        router.push("/h5/activation")
+      }
     } finally {
       setLoading(false)
     }
@@ -301,8 +331,13 @@ export default function H5LoginPage() {
 
               <div className="bg-muted/50 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
                 <p>• 使用微信扫一扫或手机相机扫描</p>
-                <p>• 每个工人有专属二维码</p>
+                <p>• 支持项目级统一二维码或个人专属二维码</p>
                 <p>• 首次扫码将自动开启激活流程</p>
+                {projectKey && (
+                  <p className="text-[11px] text-muted-foreground/80">
+                    已识别项目标识：{projectKey}
+                  </p>
+                )}
               </div>
 
               <Button

@@ -5,9 +5,25 @@ import { Router } from 'express'
 import multer from 'multer'
 import * as XLSX from 'xlsx'
 import { db } from '../db/index.js'
+import { getFaceVerifyMode } from '../lib/faceVerify.js'
 
 const router = Router()
 const upload = multer({ storage: multer.memoryStorage() })
+
+const ALL_PERMISSION_KEYS = [
+  'person:view', 'person:add', 'person:edit', 'person:delete', 'person:import', 'person:batch_status',
+  'contract:view', 'contract:add', 'contract:edit',
+  'settlement:view', 'settlement:generate', 'settlement:confirm',
+  'attendance:view', 'attendance:import', 'attendance:log',
+  'site:view', 'site:edit',
+  'data:view',
+  'system:user', 'system:org', 'system:permission', 'system:log'
+]
+
+/** 能力开关状态（人脸/活体是否为真实阿里云），可不带 Token 调用 */
+router.get('/feature-status', (_, res) => {
+  res.json({ faceVerify: getFaceVerifyMode() })
+})
 
 router.get('/org', (_, res) => {
   const rows = db.prepare('SELECT id, parent_id, name, type, sort, manager, created_at FROM org ORDER BY sort, id').all()
@@ -277,6 +293,57 @@ router.put('/role/:code/menus', (req, res) => {
   const insert = db.prepare('INSERT INTO role_menu (role_code, menu_path) VALUES (?, ?)')
   for (const p of toInsert) insert.run(code, p)
   res.json({ ok: true, count: toInsert.length })
+})
+
+// 获取某角色的按钮权限列表
+router.get('/role/:code/permissions', (req, res) => {
+  const { code } = req.params
+  if (code === 'admin') {
+    return res.json({ keys: ALL_PERMISSION_KEYS })
+  }
+  const rows = db.prepare('SELECT permission_key FROM role_permission WHERE role_code = ?').all(code)
+  res.json({ keys: rows.map(r => r.permission_key) })
+})
+
+// 保存某角色的按钮权限配置（body: { keys: string[] }）
+router.put('/role/:code/permissions', (req, res) => {
+  const { code } = req.params
+  const { keys } = req.body || {}
+  if (!Array.isArray(keys)) return res.status(400).json({ message: 'keys 必须为数组' })
+  const validSet = new Set(ALL_PERMISSION_KEYS)
+  const toInsert = keys.filter(k => validSet.has(k))
+  db.prepare('DELETE FROM role_permission WHERE role_code = ?').run(code)
+  const insert = db.prepare('INSERT INTO role_permission (role_code, permission_key) VALUES (?, ?)')
+  for (const k of toInsert) insert.run(code, k)
+  res.json({ ok: true, count: toInsert.length })
+})
+
+// 获取所有可用的按钮权限key列表（供前端展示分组）
+router.get('/all-permissions', (_, res) => {
+  const groups = [
+    { name: '人员管理', keys: ['person:view', 'person:add', 'person:edit', 'person:delete', 'person:import', 'person:batch_status'] },
+    { name: '合同管理', keys: ['contract:view', 'contract:add', 'contract:edit'] },
+    { name: '结算管理', keys: ['settlement:view', 'settlement:generate', 'settlement:confirm'] },
+    { name: '考勤管理', keys: ['attendance:view', 'attendance:import', 'attendance:log'] },
+    { name: '现场管理', keys: ['site:view', 'site:edit'] },
+    { name: '数据报表', keys: ['data:view'] },
+    { name: '系统管理', keys: ['system:user', 'system:org', 'system:permission', 'system:log'] },
+  ]
+  res.json({ groups, allKeys: ALL_PERMISSION_KEYS })
+})
+
+router.get('/my-permissions', (req, res) => {
+  const userId = req.user?.userId
+  if (!userId) return res.status(401).json({ message: '未登录' })
+  const row = db.prepare('SELECT role, org_id FROM user WHERE id = ? AND enabled = 1').get(userId)
+  const role = row?.role || 'user'
+  const org_id = row?.org_id || null
+  if (role === 'admin') {
+    return res.json({ permissions: ALL_PERMISSION_KEYS, org_id, role })
+  }
+  const permRows = db.prepare('SELECT permission_key FROM role_permission WHERE role_code = ?').all(role)
+  const permissions = permRows.map(r => r.permission_key)
+  res.json({ permissions, org_id, role })
 })
 
 router.get('/log', (req, res) => {

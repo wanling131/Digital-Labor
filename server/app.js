@@ -52,6 +52,7 @@ app.use('/api/auth', auth)
 app.use('/api', (req, res, next) => {
   // 跳过认证路径
   if (req.path.startsWith('/auth')) return next()
+  if (req.path === '/sys/feature-status') return next()
   authMiddleware(req, res, next)
 }, logMiddleware)
 

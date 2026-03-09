@@ -23,15 +23,88 @@ const upload = multer({
 })
 
 router.get('/template', (_, res) => {
-  const list = db.prepare('SELECT id, name, file_path, version, created_at FROM contract_template ORDER BY id DESC').all()
+  const list = db.prepare('SELECT id, name, file_path, version, is_visual, created_at FROM contract_template ORDER BY id DESC').all()
   res.json({ list })
 })
 
+router.get('/template/:id', (req, res) => {
+  const id = parseInt(req.params.id, 10)
+  if (!id) return res.status(400).json({ message: '无效 id' })
+  
+  const template = db.prepare('SELECT * FROM contract_template WHERE id = ?').get(id)
+  if (!template) return res.status(404).json({ message: '模板不存在' })
+  
+  // 获取模板变量
+  const variables = db.prepare('SELECT * FROM template_variable WHERE template_id = ?').all(id)
+  template.variables = variables
+  
+  res.json(template)
+})
+
 router.post('/template', (req, res) => {
-  const { name, file_path } = req.body || {}
+  const { name, file_path, content, variables = [] } = req.body || {}
   if (!name) return res.status(400).json({ message: 'name 必填' })
-  const r = db.prepare('INSERT INTO contract_template (name, file_path) VALUES (?, ?)').run(name, file_path || null)
-  res.json({ id: r.lastInsertRowid })
+  
+  // 开始事务
+  db.transaction(() => {
+    const r = db.prepare('INSERT INTO contract_template (name, file_path, content, is_visual) VALUES (?, ?, ?, ?)').run(name, file_path || null, content || null, content ? 1 : 0)
+    const templateId = r.lastInsertRowid
+    
+    // 插入变量
+    if (variables.length > 0) {
+      const ins = db.prepare('INSERT INTO template_variable (template_id, name, label, type, options, required) VALUES (?, ?, ?, ?, ?, ?)')
+      variables.forEach(v => {
+        ins.run(templateId, v.name, v.label, v.type || 'text', JSON.stringify(v.options || []), v.required ? 1 : 0)
+      })
+    }
+    
+    res.json({ id: templateId })
+  })()
+})
+
+router.put('/template/:id', (req, res) => {
+  const id = parseInt(req.params.id, 10)
+  const { name, file_path, content, variables = [] } = req.body || {}
+  
+  if (!id || !name) return res.status(400).json({ message: '参数无效' })
+  
+  // 开始事务
+  db.transaction(() => {
+    // 更新模板
+    db.prepare('UPDATE contract_template SET name = ?, file_path = ?, content = ?, is_visual = ? WHERE id = ?').run(name, file_path || null, content || null, content ? 1 : 0, id)
+    
+    // 删除旧变量
+    db.prepare('DELETE FROM template_variable WHERE template_id = ?').run(id)
+    
+    // 插入新变量
+    if (variables.length > 0) {
+      const ins = db.prepare('INSERT INTO template_variable (template_id, name, label, type, options, required) VALUES (?, ?, ?, ?, ?, ?)')
+      variables.forEach(v => {
+        ins.run(id, v.name, v.label, v.type || 'text', JSON.stringify(v.options || []), v.required ? 1 : 0)
+      })
+    }
+    
+    res.json({ id })
+  })()
+})
+
+router.post('/template/:id/render', (req, res) => {
+  const id = parseInt(req.params.id, 10)
+  const data = req.body
+  
+  if (!id) return res.status(400).json({ message: '无效 id' })
+  
+  const template = db.prepare('SELECT content FROM contract_template WHERE id = ?').get(id)
+  if (!template) return res.status(404).json({ message: '模板不存在' })
+  
+  // 替换变量
+  let renderedContent = template.content
+  Object.keys(data).forEach(key => {
+    const regex = new RegExp(`{{${key}}}`, 'g')
+    renderedContent = renderedContent.replace(regex, data[key])
+  })
+  
+  res.json({ content: renderedContent })
 })
 
 router.post('/template/upload', upload.single('file'), (req, res) => {

@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils"
 import { getWorkerToken, apiWorker } from "@/lib/api"
 
 const quickActions = [
-  { icon: Clock, label: "考勤打卡", href: "/h5/attendance", color: "bg-primary" },
+  { icon: Clock, label: "考勤", href: "/h5/attendance", color: "bg-primary" },
   { icon: FileText, label: "我的合同", href: "/h5/contract", color: "bg-accent" },
   { icon: Wallet, label: "工资查询", href: "/h5/salary", color: "bg-chart-5" },
   { icon: Bell, label: "消息通知", href: "/h5/notifications", color: "bg-chart-4" },
