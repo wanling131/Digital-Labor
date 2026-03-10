@@ -188,15 +188,19 @@ db.exec(`
     signed_at TEXT,
     pdf_path TEXT,
     flow_id TEXT,
+    sign_image_snapshot TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   )
 `)
 
-// 添加flow_id字段（如果还不存在）
-;(function addFlowIdColumn() {
+// 添加flow_id、sign_image_snapshot 字段（如果还不存在）
+;(function addContractInstanceExtraColumns() {
   const cols = db.prepare("PRAGMA table_info(contract_instance)").all()
   if (!cols.some((c) => c.name === 'flow_id')) {
     db.exec("ALTER TABLE contract_instance ADD COLUMN flow_id TEXT")
+  }
+  if (!cols.some((c) => c.name === 'sign_image_snapshot')) {
+    db.exec("ALTER TABLE contract_instance ADD COLUMN sign_image_snapshot TEXT")
   }
 })()
 
@@ -215,9 +219,18 @@ db.exec(`
     updated_at TEXT DEFAULT (datetime('now')),
     confirm_at TEXT,
     confirm_method TEXT,
+    sign_image_snapshot TEXT,
     UNIQUE(person_id, period_start)
   )
 `)
+
+// 为 settlement 表补充签名快照字段
+;(function addSettlementSignSnapshotColumn() {
+  const cols = db.prepare("PRAGMA table_info(settlement)").all()
+  if (!cols.some((c) => c.name === 'sign_image_snapshot')) {
+    db.exec("ALTER TABLE settlement ADD COLUMN sign_image_snapshot TEXT")
+  }
+})()
 
 // 站内通知（工人端：person_id；类型：合同待签、结算待确认、工资发放等）
 db.exec(`
@@ -274,6 +287,8 @@ db.exec(`
 db.exec(`CREATE INDEX IF NOT EXISTS idx_person_org_id ON person(org_id)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_person_status ON person(status)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_person_on_site ON person(on_site)`)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_person_updated_at ON person(updated_at)`)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_person_job_title ON person(job_title)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_attendance_work_date ON attendance(work_date)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_attendance_person_id ON attendance(person_id)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_attendance_person_work_date ON attendance(person_id, work_date)`)
@@ -334,15 +349,13 @@ db.exec(`
 db.exec(`CREATE INDEX IF NOT EXISTS idx_clock_log_person_id ON clock_log(person_id)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_clock_log_punch_at ON clock_log(punch_at)`)
 
-// 默认管理员（密码 123456，与登录页演示账号一致；实际生产建议改为 bcrypt）
+// 默认管理员（仅在首次初始化数据库时插入；不覆盖已有库中的密码，避免破坏兼容性）
 const defaultHash = '123456'
 try {
   db.prepare("INSERT INTO user (username, password_hash, name, role) VALUES (?, ?, ?, ?)").run('admin', defaultHash, '管理员', 'admin')
 } catch (e) {
   if (!e.message.includes('UNIQUE')) throw e
 }
-// 保证已有库中 admin 密码与演示一致（便于首次体验）
-db.prepare("UPDATE user SET password_hash = ? WHERE username = 'admin'").run(defaultHash)
 
 export function initDb() {
   return db

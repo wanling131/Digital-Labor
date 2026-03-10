@@ -253,8 +253,10 @@ router.get('/my-signed', (req, res) => {
   const person_id = req.query.person_id || req.user?.workerId
   if (!person_id) return res.status(400).json({ message: 'person_id 必填或请登录' })
   const list = db.prepare(`
-    SELECT ci.id, ci.title, ci.signed_at, ci.status, ci.deadline
+    SELECT ci.id, ci.title, ci.signed_at, ci.status, ci.deadline, ci.sign_image_snapshot,
+           p.signature_image as person_signature_image
     FROM contract_instance ci
+    JOIN person p ON ci.person_id = p.id
     WHERE ci.person_id = ? AND ci.status = '已签署'
     ORDER BY ci.signed_at DESC
   `).all(person_id)
@@ -308,7 +310,28 @@ router.post('/sign/:id', async (req, res) => {
 
     // 更新人员合同签署状态
     db.prepare('UPDATE person SET contract_signed = 1 WHERE id = ?').run(row.person_id)
-    
+
+    // 写入签名快照：从 person.signature_image 复制一份到合同专用目录
+    try {
+      const person = db.prepare('SELECT signature_image FROM person WHERE id = ?').get(row.person_id)
+      const sigPath = person?.signature_image && String(person.signature_image).trim()
+      if (sigPath && !String(sigPath).startsWith('data:image')) {
+        const serverRoot = path.join(__dirname, '..')
+        const srcAbs = path.resolve(serverRoot, sigPath)
+        if (fs.existsSync(srcAbs)) {
+          const snapDir = path.join(serverRoot, 'uploads', 'signatures', 'contracts')
+          if (!fs.existsSync(snapDir)) fs.mkdirSync(snapDir, { recursive: true })
+          const filename = `contract_${id}_person_${row.person_id}.png`
+          const dstAbs = path.join(snapDir, filename)
+          fs.copyFileSync(srcAbs, dstAbs)
+          const rel = path.relative(serverRoot, dstAbs)
+          db.prepare('UPDATE contract_instance SET sign_image_snapshot = ? WHERE id = ?').run(rel, id)
+        }
+      }
+    } catch (e) {
+      console.error('保存合同签名快照失败:', e)
+    }
+
     res.json({ ok: true })
   } catch (error) {
     console.error('合同签署失败:', error)
@@ -367,8 +390,13 @@ router.get('/:id/pdf', async (req, res) => {
 })
 router.get('/:id', (req, res) => {
   const row = db.prepare(`
-    SELECT ci.*, p.name as person_name, p.work_no
-    FROM contract_instance ci JOIN person p ON ci.person_id = p.id
+    SELECT 
+      ci.*,
+      p.name as person_name,
+      p.work_no,
+      p.signature_image as person_signature_image
+    FROM contract_instance ci 
+    JOIN person p ON ci.person_id = p.id
     WHERE ci.id = ?
   `).get(req.params.id)
   if (!row) return res.status(404).json({ message: '不存在' })

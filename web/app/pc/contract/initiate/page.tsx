@@ -73,7 +73,7 @@ export default function ContractInitiatePage() {
   const [unsignedList, setUnsignedList] = useState<PersonItem[]>([])
   const [templates, setTemplates] = useState<TemplateItem[]>([])
   const [pendingTasks, setPendingTasks] = useState<ContractStatusItem[]>([])
-  const [templateId, setTemplateId] = useState<string>("")
+  const [templateId, setTemplateId] = useState<string>("none")
   const [title, setTitle] = useState("")
   const [deadline, setDeadline] = useState("")
   const [orgId, setOrgId] = useState("all")
@@ -154,7 +154,7 @@ export default function ContractInitiatePage() {
       await api("/api/contract/launch", {
         method: "POST",
         body: {
-          template_id: templateId ? parseInt(templateId, 10) : undefined,
+          template_id: templateId && templateId !== "none" ? parseInt(templateId, 10) : undefined,
           title: title || "合同签约",
           person_ids: selectedPersonnel,
           deadline: deadline || undefined,
@@ -394,7 +394,7 @@ export default function ContractInitiatePage() {
                   <SelectValue placeholder="选择合同模板" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">无</SelectItem>
+                  <SelectItem value="none">无</SelectItem>
                   {templates.map((t) => (
                     <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
                   ))}

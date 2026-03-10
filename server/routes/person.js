@@ -12,14 +12,18 @@ import multer from 'multer'
 import XLSX from 'xlsx'
 import fs from 'fs'
 import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const SERVER_ROOT = path.join(__dirname, '..')
 
 // 配置文件上传
-const upload = multer({ dest: path.join(process.cwd(), 'uploads') })
+const upload = multer({ dest: path.join(SERVER_ROOT, 'uploads') })
 
 const router = Router()
 
 router.get('/archive', (req, res) => {
-  const { status, org_id, on_site, filled, contract_signed, keyword } = req.query
+  const { status, org_id, on_site, filled, contract_signed, keyword, job_title } = req.query
   const { limit, offset, page, pageSize } = parsePagination(req.query)
   const where = []
   const params = []
@@ -31,6 +35,7 @@ router.get('/archive', (req, res) => {
   if (filled === '0') { where.push("(TRIM(COALESCE(p.id_card,'')) = '' OR TRIM(COALESCE(p.mobile,'')) = '')"); }
   if (contract_signed === '0') { where.push('p.contract_signed = 0'); }
   if (contract_signed === '1') { where.push('p.contract_signed = 1'); }
+  if (job_title) { where.push('p.job_title = ?'); params.push(job_title) }
   const kw = typeof keyword === 'string' ? keyword.trim() : ''
   if (kw) {
     where.push('(p.name LIKE ? OR p.work_no LIKE ? OR o.name LIKE ?)')
@@ -110,7 +115,41 @@ router.post('/me/activation', (req, res) => {
   const values = []
   if (id_card !== undefined) { updates.push('id_card = ?'); values.push(id_card ? encrypt(String(id_card)) : null) }
   if (mobile !== undefined) { updates.push('mobile = ?'); values.push(mobile ? encrypt(String(mobile)) : null) }
-  if (signature_image !== undefined) { updates.push('signature_image = ?'); values.push(signature_image) }
+  if (signature_image !== undefined) {
+    let storedPath = null
+
+    // 显式传入 null / 空字符串，视为清空签名
+    if (signature_image === null || signature_image === '') {
+      storedPath = null
+    } else {
+      const sig = String(signature_image)
+      // dataURL -> 文件
+      if (sig.startsWith('data:image')) {
+        const commaIndex = sig.indexOf(',')
+        if (commaIndex > 0) {
+          const base64 = sig.slice(commaIndex + 1)
+          try {
+            const buffer = Buffer.from(base64, 'base64')
+            const dir = path.join(SERVER_ROOT, 'uploads', 'signatures')
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+            const filename = `person_${workerId}_${Date.now()}.png`
+            const absPath = path.join(dir, filename)
+            fs.writeFileSync(absPath, buffer)
+            storedPath = path.relative(SERVER_ROOT, absPath)
+          } catch (e) {
+            console.error('保存签名图片失败:', e)
+            storedPath = null
+          }
+        }
+      } else {
+        // 已是相对路径或其他字符串，直接存库，方便后续迁移
+        storedPath = sig
+      }
+    }
+
+    updates.push('signature_image = ?')
+    values.push(storedPath)
+  }
   if (values.length === 0) return res.status(400).json({ message: '无有效字段' })
   values.push(workerId)
   db.prepare(`UPDATE person SET ${updates.join(', ')} WHERE id = ?`).run(...values)
@@ -131,6 +170,18 @@ router.get('/status', (_, res) => {
   PERSON_STATUS_LIST.forEach(s => { map[s] = 0 })
   list.forEach(r => { map[r.status] = r.count })
   res.json({ list: PERSON_STATUS_LIST.map(s => ({ status: s, count: map[s] ?? 0 })) })
+})
+
+/** 工种列表：从人员表中提取非空工种，供前端筛选使用 */
+router.get('/job-titles', (_, res) => {
+  const rows = db.prepare(`
+    SELECT DISTINCT job_title 
+    FROM person 
+    WHERE TRIM(COALESCE(job_title, '')) != ''
+    ORDER BY job_title
+  `).all()
+  const list = rows.map((r) => r.job_title)
+  res.json({ list })
 })
 
 router.post('/status/batch', (req, res) => {
@@ -154,14 +205,17 @@ function safeDecryptThenMask(value, type) {
   }
 }
 
-/** 认证管理列表：人员身份证/手机/签名补全状态，支持按已补全筛选；与人员档案同源 person 表，敏感字段脱敏一致 */
+/** 认证管理列表：人员身份证/手机/签名补全状态，支持按已补全及组织/工种等筛选；与人员档案同源 person 表，敏感字段脱敏一致 */
 router.get('/auth', (req, res) => {
-  const { filled, page = 1, pageSize = 20, keyword } = req.query
+  const { filled, page = 1, pageSize = 20, keyword, org_id, status, job_title } = req.query
   const { limit, offset } = parsePagination(req.query)
   const where = []
   const params = []
   if (filled === '1') { where.push("TRIM(COALESCE(p.id_card,'')) != '' AND TRIM(COALESCE(p.mobile,'')) != ''"); }
   if (filled === '0') { where.push("(TRIM(COALESCE(p.id_card,'')) = '' OR TRIM(COALESCE(p.mobile,'')) = '')"); }
+  if (status) { where.push('p.status = ?'); params.push(status) }
+  if (org_id) { where.push('p.org_id = ?'); params.push(org_id) }
+  if (job_title) { where.push('p.job_title = ?'); params.push(job_title) }
   const kw = typeof keyword === 'string' ? keyword.trim() : ''
   if (kw) {
     where.push('(p.name LIKE ? OR p.work_no LIKE ? OR o.name LIKE ?)')

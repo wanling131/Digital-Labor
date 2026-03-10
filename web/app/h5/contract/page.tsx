@@ -31,7 +31,7 @@ import {
   Shield,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { apiWorker, downloadContractPdf } from "@/lib/api"
+import { apiWorker, downloadContractPdf, buildFileUrl } from "@/lib/api"
 
 interface Contract {
   id: string
@@ -42,6 +42,8 @@ interface Contract {
   endDate: string
   status: "pending" | "signed" | "expired" | "rejected"
   signedAt?: string
+  signImageSnapshot?: string
+  personSignatureImage?: string
 }
 
 const statusConfig = {
@@ -73,7 +75,7 @@ export default function ContractPage() {
   const [esignUrl, setEsignUrl] = useState<string | null>(null)
   const [evidenceInfo, setEvidenceInfo] = useState<any>(null)
 
-  const mapRow = (row: { id: number; title?: string; status?: string; deadline?: string; signed_at?: string | null }): Contract => ({
+  const mapRow = (row: { id: number; title?: string; status?: string; deadline?: string; signed_at?: string | null; sign_image_snapshot?: string | null; person_signature_image?: string | null }): Contract => ({
     id: String(row.id),
     title: row.title ?? "合同",
     type: "劳动合同",
@@ -82,6 +84,8 @@ export default function ContractPage() {
     endDate: row.deadline?.slice(0, 10) ?? "",
     status: row.status === "已签署" ? "signed" : row.status === "待签署" ? "pending" : "expired",
     signedAt: row.signed_at ?? undefined,
+    signImageSnapshot: row.sign_image_snapshot ?? undefined,
+    personSignatureImage: row.person_signature_image ?? undefined,
   })
 
   const loadContracts = useCallback(async () => {
@@ -417,6 +421,25 @@ export default function ContractPage() {
                   <p>有效期: {selectedContract.startDate} 至 {selectedContract.endDate}</p>
                 </div>
               </div>
+
+              {(() => {
+                const raw = selectedContract.signImageSnapshot || selectedContract.personSignatureImage
+                const url = buildFileUrl(raw)
+                return url
+                  ? (
+                <div className="mt-2">
+                  <p className="text-xs text-muted-foreground mb-1">签名预览：</p>
+                  <div className="border rounded-md p-2 inline-flex bg-white">
+                    <img
+                      src={url}
+                      alt="签名"
+                      className="h-16 w-auto object-contain"
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none" }}
+                    />
+                  </div>
+                </div>
+                  ) : null
+              })()}
               
               <div className="border rounded-lg p-4 max-h-48 overflow-y-auto text-sm text-muted-foreground">
                 <p className="mb-2">合同主要条款:</p>

@@ -93,6 +93,7 @@ export default function PersonnelArchivePage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedStatus, setSelectedStatus] = useState<string>("all")
   const [selectedOrgId, setSelectedOrgId] = useState<string>("all")
+  const [selectedJobTitle, setSelectedJobTitle] = useState<string>("all")
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
@@ -103,6 +104,7 @@ export default function PersonnelArchivePage() {
   const pageSize = 20
   const [loading, setLoading] = useState(true)
   const [orgList, setOrgList] = useState<{ id: number; name: string }[]>([])
+  const [jobTitles, setJobTitles] = useState<string[]>([])
   const [statusCounts, setStatusCounts] = useState<{ status: string; count: number }[]>([])
   const [formData, setFormData] = useState({ org_id: "" as string | number, work_no: "", name: "", id_card: "", mobile: "", status: "预注册", job_title: "" })
   const [certFormData, setCertFormData] = useState({ name: "", certificate_no: "", issue_date: "", expiry_date: "" })
@@ -126,6 +128,7 @@ export default function PersonnelArchivePage() {
       }
       if (selectedStatus !== "all") query.status = selectedStatus
       if (selectedOrgId !== "all") query.org_id = selectedOrgId
+      if (selectedJobTitle !== "all") query.job_title = selectedJobTitle
       if (hasKeyword) query.keyword = searchTerm.trim()
       const res = await api<{ list: unknown[]; total: number }>("/api/person/archive", { query })
       setList((res.list || []) as typeof list)
@@ -136,7 +139,7 @@ export default function PersonnelArchivePage() {
     } finally {
       setLoading(false)
     }
-  }, [page, pageSize, selectedStatus, selectedOrgId, searchTerm])
+  }, [page, pageSize, selectedStatus, selectedOrgId, selectedJobTitle, searchTerm])
 
   const loadOrg = useCallback(async () => {
     try {
@@ -144,6 +147,15 @@ export default function PersonnelArchivePage() {
       setOrgList(flattenOrg(tree || []))
     } catch {
       setOrgList([])
+    }
+  }, [])
+
+  const loadJobTitles = useCallback(async () => {
+    try {
+      const res = await api<{ list: string[] }>("/api/person/job-titles")
+      setJobTitles(res.list || [])
+    } catch {
+      setJobTitles([])
     }
   }, [])
 
@@ -163,7 +175,8 @@ export default function PersonnelArchivePage() {
   useEffect(() => {
     loadOrg()
     loadStatus()
-  }, [loadOrg, loadStatus])
+    loadJobTitles()
+  }, [loadOrg, loadStatus, loadJobTitles])
 
   const filteredBySearch = list
 
@@ -318,15 +331,15 @@ export default function PersonnelArchivePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
           <HomeButton />
           <div>
             <h1 className="text-2xl font-bold text-foreground">人员档案</h1>
             <p className="text-muted-foreground">管理人员基本信息、实名认证及合同状态</p>
           </div>
-        </div>
-        <div className="flex items-center gap-2">
+          </div>
+          <div className="flex items-center gap-2">
           <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" className="gap-2">
@@ -642,6 +655,19 @@ export default function PersonnelArchivePage() {
                   {orgList.map((o) => (
                     <SelectItem key={o.id} value={String(o.id)}>
                       {o.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={selectedJobTitle} onValueChange={setSelectedJobTitle}>
+                <SelectTrigger className="w-40">
+                  <SelectValue placeholder="工种筛选" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部工种</SelectItem>
+                  {jobTitles.map((jt) => (
+                    <SelectItem key={jt} value={jt}>
+                      {jt}
                     </SelectItem>
                   ))}
                 </SelectContent>

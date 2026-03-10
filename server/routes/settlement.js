@@ -4,6 +4,12 @@
 import { Router } from 'express'
 import { db } from '../db/index.js'
 import { err } from '../lib/response.js'
+import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const SERVER_ROOT = path.join(__dirname, '..')
 
 const router = Router()
 
@@ -99,6 +105,28 @@ router.post('/confirm/:id', (req, res) => {
   }
   values.push(id)
   db.prepare(`UPDATE settlement SET ${updates.join(', ')} WHERE id = ?`).run(...values)
+
+  // 结算确认成功后写入签名快照（如有）
+  if (action === 'confirm') {
+    try {
+      const person = db.prepare('SELECT signature_image FROM person WHERE id = ?').get(st.person_id)
+      const sigPath = person?.signature_image && String(person.signature_image).trim()
+      if (sigPath && !String(sigPath).startsWith('data:image')) {
+        const srcAbs = path.resolve(SERVER_ROOT, sigPath)
+        if (fs.existsSync(srcAbs)) {
+          const dir = path.join(SERVER_ROOT, 'uploads', 'signatures', 'settlements')
+          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+          const filename = `settlement_${id}_person_${st.person_id}.png`
+          const dstAbs = path.join(dir, filename)
+          fs.copyFileSync(srcAbs, dstAbs)
+          const rel = path.relative(SERVER_ROOT, dstAbs)
+          db.prepare('UPDATE settlement SET sign_image_snapshot = ? WHERE id = ?').run(rel, id)
+        }
+      }
+    } catch (e) {
+      console.error('保存结算签名快照失败:', e)
+    }
+  }
   if (action === 'confirm' && (amount_paid != null && parseFloat(amount_paid) > 0)) {
     const notifInsert = db.prepare('INSERT INTO notification (person_id, type, title, body) VALUES (?, ?, ?, ?)')
     notifInsert.run(st.person_id, '工资发放', '工资已发放', `已发放金额：${amount_paid}`)

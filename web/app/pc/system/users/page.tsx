@@ -129,7 +129,7 @@ export default function UsersPage() {
   const [formUsername, setFormUsername] = useState("")
   const [formPassword, setFormPassword] = useState("")
   const [formName, setFormName] = useState("")
-  const [formOrgId, setFormOrgId] = useState<string>("")
+  const [formOrgId, setFormOrgId] = useState<string>("none")
   const [formRole, setFormRole] = useState("admin")
   const [formEnabled, setFormEnabled] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -171,13 +171,13 @@ export default function UsersPage() {
     try {
       await api("/api/sys/user", {
         method: "POST",
-        body: { username: formUsername, password: formPassword, name: formName || undefined, org_id: formOrgId ? parseInt(formOrgId, 10) : undefined, role: formRole },
+        body: { username: formUsername, password: formPassword, name: formName || undefined, org_id: formOrgId && formOrgId !== "none" ? parseInt(formOrgId, 10) : undefined, role: formRole },
       })
       setShowNewDialog(false)
       setFormUsername("")
       setFormPassword("")
       setFormName("")
-      setFormOrgId("")
+      setFormOrgId("none")
       fetchList()
     } catch (e) { console.error(e) }
     setIsSubmitting(false)
@@ -189,7 +189,7 @@ export default function UsersPage() {
     try {
       await api(`/api/sys/user/${editUser.id}`, {
         method: "PUT",
-        body: { name: formName || undefined, org_id: formOrgId ? parseInt(formOrgId, 10) : undefined, role: formRole, enabled: formEnabled ? 1 : 0, password: formPassword || undefined },
+        body: { name: formName || undefined, org_id: formOrgId && formOrgId !== "none" ? parseInt(formOrgId, 10) : undefined, role: formRole, enabled: formEnabled ? 1 : 0, password: formPassword || undefined },
       })
       setEditUser(null)
       setFormPassword("")
@@ -205,9 +205,9 @@ export default function UsersPage() {
           <h1 className="text-2xl font-bold text-foreground">用户管理</h1>
           <p className="text-muted-foreground">管理系统用户账号及权限</p>
         </div>
-        <Dialog open={showNewDialog} onOpenChange={(o) => { setShowNewDialog(o); if (!o) { setEditUser(null); setFormUsername(""); setFormPassword(""); setFormName(""); setFormOrgId("") } }}>
+        <Dialog open={showNewDialog} onOpenChange={(o) => { setShowNewDialog(o); if (!o) { setEditUser(null); setFormUsername(""); setFormPassword(""); setFormName(""); setFormOrgId("none") } }}>
           <DialogTrigger asChild>
-            <Button className="gap-2" onClick={() => { setEditUser(null); setFormUsername(""); setFormPassword(""); setFormName(""); setFormOrgId(""); setFormRole("admin") }}>
+            <Button className="gap-2" onClick={() => { setEditUser(null); setFormUsername(""); setFormPassword(""); setFormName(""); setFormOrgId("none"); setFormRole("admin") }}>
               <Plus className="h-4 w-4" />
               新增用户
             </Button>
@@ -242,7 +242,7 @@ export default function UsersPage() {
                       <SelectValue placeholder="选择组织" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">无</SelectItem>
+                      <SelectItem value="none">无</SelectItem>
                       {orgList.map((o) => <SelectItem key={o.id} value={String(o.id)}>{o.name}</SelectItem>)}
                     </SelectContent>
                   </Select>

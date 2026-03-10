@@ -86,6 +86,8 @@ export default function SettlementGeneratePage() {
   const [genPeriodStart, setGenPeriodStart] = useState("2024-03-01")
   const [genPeriodEnd, setGenPeriodEnd] = useState("2024-03-31")
   const [stats, setStats] = useState({ total: 0, 待确认: 0, 已确认: 0, 已发放: 0 })
+  const [isPushing, setIsPushing] = useState(false)
+  const [pushMessage, setPushMessage] = useState<string | null>(null)
 
   const fetchList = useCallback(async () => {
     try {
@@ -186,6 +188,8 @@ export default function SettlementGeneratePage() {
   }
 
   const handlePush = async () => {
+    setIsPushing(true)
+    setPushMessage(null)
     try {
       await api("/api/settlement/push-notify", {
         method: "POST",
@@ -194,8 +198,14 @@ export default function SettlementGeneratePage() {
       setIsPushOpen(false)
       setSelectedItems([])
       await fetchList()
+      setPushMessage("推送成功，已向选中人员发送结算确认通知（演示）。")
+      setTimeout(() => setPushMessage(null), 3000)
     } catch (e) {
       console.error(e)
+      setPushMessage("推送失败，请稍后重试。")
+      setTimeout(() => setPushMessage(null), 3000)
+    } finally {
+      setIsPushing(false)
     }
   }
 
@@ -473,7 +483,7 @@ export default function SettlementGeneratePage() {
       </Dialog>
 
       {/* 批量推送弹窗 */}
-      <Dialog open={isPushOpen} onOpenChange={setIsPushOpen}>
+      <Dialog open={isPushOpen} onOpenChange={(open) => { setIsPushOpen(open); if (!open) setIsPushing(false) }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>批量推送确认</DialogTitle>
@@ -492,10 +502,18 @@ export default function SettlementGeneratePage() {
             <Button variant="outline" onClick={() => setIsPushOpen(false)}>
               取消
             </Button>
-            <Button onClick={handlePush}>确认推送</Button>
+            <Button onClick={handlePush} disabled={isPushing}>
+              {isPushing ? "推送中..." : "确认推送"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {pushMessage && (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-primary text-primary-foreground px-4 py-2 text-sm shadow-lg">
+          {pushMessage}
+        </div>
+      )}
     </div>
   )
 }

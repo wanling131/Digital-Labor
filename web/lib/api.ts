@@ -4,7 +4,11 @@
  * 生产环境需配置同源或 NEXT_PUBLIC_API_BASE
  */
 
-const API_BASE = typeof window !== 'undefined' ? '' : process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3000'
+// 在浏览器端使用相对路径（交给 next.config rewrites 代理），在服务端默认走环境变量或本地 3000
+const API_BASE =
+  typeof window === 'undefined'
+    ? process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3000'
+    : ''
 const TOKEN_KEY = 'labor_token'
 const WORKER_TOKEN_KEY = 'labor_worker_token'
 
@@ -69,6 +73,17 @@ export async function api<T = unknown>(
   }
   if (!res.ok) throw new Error((data as { message?: string }).message ?? res.statusText)
   return data as T
+}
+
+/** 构造后端静态文件访问 URL（如签名图片），优先使用 NEXT_PUBLIC_API_BASE */
+export function buildFileUrl(relativePath: string | null | undefined): string {
+  if (!relativePath) return ''
+  const clean = String(relativePath).replace(/^\/+/, '')
+  if (!clean) return ''
+  // 文件访问统一使用 NEXT_PUBLIC_API_BASE，浏览器端会在构建时被内联为常量
+  const envBase = process.env.NEXT_PUBLIC_API_BASE ?? ''
+  const base = envBase ? envBase.replace(/\/+$/, '') : ''
+  return base ? `${base}/${clean}` : `/${clean}`
 }
 
 /** 工人端 API（H5）：使用 labor_worker_token，401 时跳转 /h5/login */

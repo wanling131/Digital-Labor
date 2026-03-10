@@ -67,7 +67,7 @@ npm run dev
 
 ### 3. 默认账号
 
-- 管理端：**admin / admin123**（登录后进 /pc/dashboard）  
+- 管理端：**admin / 123456**（登录后进 `/pc/dashboard`）。历史版本曾使用 `admin123`，已做兼容（可用 `admin123` 或 `123456` 登录）。  
 - 工人端：用工号 + 姓名登录（需先在管理端「人员档案」中录入）
 
 ---
@@ -112,6 +112,6 @@ npm run dev
 
 ## 技术栈
 
-- 前端：Vite、React 18、React Router 6  
+- 前端：Next.js 16、React 19、TypeScript、Tailwind CSS（PC 管理端 + H5 工人端共用一套工程）  
 - 后端：Node.js 18+、Express、SQLite（better-sqlite3）、JWT  
 - 功能范围与实现进度见 **功能点/需求与实现对比.md**。

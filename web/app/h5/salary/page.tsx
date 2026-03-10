@@ -23,7 +23,7 @@ import {
   Loader2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { apiWorker, downloadSettlementSlip } from "@/lib/api"
+import { apiWorker, downloadSettlementSlip, buildFileUrl } from "@/lib/api"
 
 interface SalaryRecord {
   id: string
@@ -65,7 +65,7 @@ const statusConfig = {
   processing: { label: "发放中", color: "bg-blue-100 text-blue-700" },
 }
 
-type PendingSettlement = { id: number; period_start: string; period_end: string; amount_due: number; status: string }
+type PendingSettlement = { id: number; period_start: string; period_end: string; amount_due: number; status: string; sign_image_snapshot?: string | null }
 
 export default function SalaryPage() {
   const [selectedRecord, setSelectedRecord] = useState<SalaryRecord | null>(null)
@@ -473,6 +473,24 @@ export default function SalaryPage() {
                 <p>结算周期：{previewSettlement.period_start} ～ {previewSettlement.period_end}</p>
                 <p>应发金额：<span className="font-semibold text-primary">¥{(previewSettlement.amount_due ?? 0).toLocaleString()}</span></p>
               </div>
+              {(() => {
+                const raw = previewSettlement.sign_image_snapshot
+                const url = buildFileUrl(raw)
+                return url
+                  ? (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">签名预览：</p>
+                  <div className="border rounded-md p-2 inline-flex bg-white">
+                    <img
+                      src={url}
+                      alt="签名"
+                      className="h-16 w-auto object-contain"
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none" }}
+                    />
+                  </div>
+                </div>
+                  ) : null
+              })()}
               <p className="text-xs text-muted-foreground">
                 详细考勤明细可在「考勤」和「工资查询」中查看。本次确认将作为电子结算记录存档，不可随意篡改。
               </p>

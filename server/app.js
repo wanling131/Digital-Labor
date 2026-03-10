@@ -4,6 +4,8 @@
  */
 import express from 'express'
 import cors from 'cors'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import { config } from 'dotenv'
 import { db, initDb } from './db/index.js'
 
@@ -26,6 +28,8 @@ import notify from './routes/notify.js'
 import worker from './routes/worker.js'
 import monitor from './routes/monitor.js'
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
 initDb()
 // 数据库为空时自动导入虚拟数据（后续若要取消可删除此段）
 try {
@@ -40,6 +44,9 @@ try {
 const app = express()
 app.use(cors())
 app.use(express.json())
+
+// 静态文件：签名图片、模板等统一从 /uploads 暴露给前端访问
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')))
 
 // 性能监控中间件（在所有路由之前）
 app.use(performanceMiddleware)

@@ -7,6 +7,13 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
   Table,
   TableBody,
   TableCell,
@@ -69,12 +76,17 @@ const reviewConfig = {
 export default function CertificationPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [filledTab, setFilledTab] = useState<"all" | "1" | "0">("all")
+  const [selectedStatus, setSelectedStatus] = useState<string>("all")
+  const [selectedOrgId, setSelectedOrgId] = useState<string>("all")
+  const [selectedJobTitle, setSelectedJobTitle] = useState<string>("all")
   const [list, setList] = useState<AuthRecord[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [selectedRecord, setSelectedRecord] = useState<AuthRecord | null>(null)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [reviewingId, setReviewingId] = useState<number | null>(null)
+  const [orgOptions, setOrgOptions] = useState<{ id: number; name: string }[]>([])
+  const [jobTitles, setJobTitles] = useState<string[]>([])
 
   const loadList = useCallback(() => {
     setLoading(true)
@@ -82,6 +94,9 @@ export default function CertificationPage() {
     if (filledTab === "1") params.set("filled", "1")
     if (filledTab === "0") params.set("filled", "0")
     if (searchTerm.trim()) params.set("keyword", searchTerm.trim())
+    if (selectedStatus !== "all") params.set("status", selectedStatus)
+    if (selectedOrgId !== "all") params.set("org_id", selectedOrgId)
+    if (selectedJobTitle !== "all") params.set("job_title", selectedJobTitle)
     params.set("pageSize", "50")
     api<{ list: AuthRecord[]; total: number }>(`/api/person/auth?${params}`)
       .then((res) => {
@@ -95,7 +110,27 @@ export default function CertificationPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [filledTab, searchTerm])
+  }, [filledTab, searchTerm, selectedStatus, selectedOrgId, selectedJobTitle])
+
+  const loadMeta = useCallback(() => {
+    api<{ tree: { id: number; name: string; children?: unknown[] }[] }>("/api/sys/org")
+      .then((res) => {
+        const flat: { id: number; name: string }[] = []
+        function walk(nodes: { id: number; name: string; children?: unknown[] }[]) {
+          for (const n of nodes) {
+            flat.push({ id: n.id, name: n.name })
+            if (n.children && n.children.length) walk(n.children as any)
+          }
+        }
+        walk(res.tree || [])
+        setOrgOptions(flat)
+      })
+      .catch(() => setOrgOptions([]))
+
+    api<{ list: string[] }>("/api/person/job-titles")
+      .then((res) => setJobTitles(res.list || []))
+      .catch(() => setJobTitles([]))
+  }, [])
 
   const handleAuthReview = useCallback(async (personId: number, status: "approved" | "rejected") => {
     setReviewingId(personId)
@@ -110,6 +145,10 @@ export default function CertificationPage() {
   useEffect(() => {
     loadList()
   }, [loadList])
+
+  useEffect(() => {
+    loadMeta()
+  }, [loadMeta])
 
   const filteredRecords = list
 
@@ -223,6 +262,46 @@ export default function CertificationPage() {
                 className="pl-9"
               />
             </div>
+            <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+              <SelectTrigger className="w-32">
+                <SelectValue placeholder="状态筛选" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部状态</SelectItem>
+                <SelectItem value="预注册">预注册</SelectItem>
+                <SelectItem value="已实名">已实名</SelectItem>
+                <SelectItem value="已签约">已签约</SelectItem>
+                <SelectItem value="已进场">已进场</SelectItem>
+                <SelectItem value="已离场">已离场</SelectItem>
+                <SelectItem value="黑名单">黑名单</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={selectedOrgId} onValueChange={setSelectedOrgId}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="组织筛选" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部组织</SelectItem>
+                {orgOptions.map((o) => (
+                  <SelectItem key={o.id} value={String(o.id)}>
+                    {o.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={selectedJobTitle} onValueChange={setSelectedJobTitle}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="工种筛选" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部工种</SelectItem>
+                {jobTitles.map((jt) => (
+                  <SelectItem key={jt} value={jt}>
+                    {jt}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {loading ? (
