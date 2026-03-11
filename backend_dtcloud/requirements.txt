@@ -12,4 +12,3 @@ requests>=2.31.0
 uvicorn>=0.27.0,<0.42
 fastapi>=0.110.0,<0.111
 python-multipart>=0.0.6
-python-multipart>=0.0.6

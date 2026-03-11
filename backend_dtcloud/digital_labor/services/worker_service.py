@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 
 from sqlalchemy import text
 
-from digital_labor.crypto_compat import safe_decrypt_then_mask
+from digital_labor.crypto_compat import encrypt, safe_decrypt_then_mask
 from digital_labor.db import get_engine
 
 
@@ -38,10 +38,12 @@ def update_me(worker_id: int, patch: Dict[str, Any]) -> None:
     params: Dict[str, Any] = {"id": worker_id}
     if "mobile" in patch:
         updates.append("mobile = :mobile")
-        params["mobile"] = patch.get("mobile")
+        v = patch.get("mobile")
+        params["mobile"] = encrypt(str(v)) if v else None
     if "id_card" in patch:
         updates.append("id_card = :id_card")
-        params["id_card"] = patch.get("id_card")
+        v = patch.get("id_card")
+        params["id_card"] = encrypt(str(v)) if v else None
     if len(params.keys()) == 1:
         raise ValueError("无有效字段")
     engine = get_engine()
