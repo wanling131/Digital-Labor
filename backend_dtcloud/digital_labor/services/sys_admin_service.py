@@ -119,11 +119,24 @@ def org_create(body: Dict[str, Any]) -> int:
         raise ValueError("name 必填")
     engine = get_engine()
     with engine.begin() as conn:
+        params = {
+            "p": int(body.get("parent_id") or 0),
+            "n": name,
+            "t": body.get("type") or "company",
+            "s": int(body.get("sort") or 0),
+            "m": body.get("manager"),
+        }
+        if engine.dialect.name == "sqlite":
+            r = conn.execute(
+                text("INSERT INTO org (parent_id, name, type, sort, manager) VALUES (:p, :n, :t, :s, :m)"),
+                params,
+            )
+            return int(r.lastrowid or 0)
         r = conn.execute(
             text("INSERT INTO org (parent_id, name, type, sort, manager) VALUES (:p, :n, :t, :s, :m) RETURNING id"),
-            {"p": int(body.get("parent_id") or 0), "n": name, "t": body.get("type") or "company", "s": int(body.get("sort") or 0), "m": body.get("manager")},
+            params,
         ).mappings().first()
-    return int(r["id"])
+        return int(r["id"])
 
 
 def org_update(org_id: int, patch: Dict[str, Any]) -> None:
@@ -172,16 +185,30 @@ def user_create(body: Dict[str, Any]) -> Union[str, int]:
     engine = get_engine()
     try:
         with engine.begin() as conn:
-            r = conn.execute(
-                text(
-                    """
-                    INSERT INTO "user" (username, password_hash, name, org_id, role)
-                    VALUES (:u, :p, :n, :o, :r)
-                    RETURNING id
-                    """
-                ),
-                {"u": body["username"], "p": body["password"], "n": body.get("name"), "o": body.get("org_id"), "r": body.get("role") or "admin"},
-            ).mappings().first()
+            params = {
+                "u": body["username"],
+                "p": body["password"],
+                "n": body.get("name"),
+                "o": body.get("org_id"),
+                "r": body.get("role") or "admin",
+            }
+            if engine.dialect.name == "sqlite":
+                rr = conn.execute(
+                    text('INSERT INTO "user" (username, password_hash, name, org_id, role) VALUES (:u, :p, :n, :o, :r)'),
+                    params,
+                )
+                r = {"id": int(rr.lastrowid or 0)}
+            else:
+                r = conn.execute(
+                    text(
+                        """
+                        INSERT INTO "user" (username, password_hash, name, org_id, role)
+                        VALUES (:u, :p, :n, :o, :r)
+                        RETURNING id
+                        """
+                    ),
+                    params,
+                ).mappings().first()
     except Exception as e:  # noqa: BLE001
         if "unique" in str(e).lower():
             return "duplicate"

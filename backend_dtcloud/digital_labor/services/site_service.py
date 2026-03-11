@@ -75,13 +75,20 @@ def equipment_create(body: Dict[str, Any]) -> int:
         raise ValueError("name 必填")
     engine = get_engine()
     with engine.begin() as conn:
+        params = {"oid": body.get("org_id"), "n": name, "c": body.get("code"), "s": body.get("status") or "正常"}
+        if engine.dialect.name == "sqlite":
+            r = conn.execute(
+                text("INSERT INTO equipment (org_id, name, code, status, updated_at) VALUES (:oid, :n, :c, :s, CURRENT_TIMESTAMP)"),
+                params,
+            )
+            return int(r.lastrowid or 0)
         r = conn.execute(
             text(
                 "INSERT INTO equipment (org_id, name, code, status, updated_at) VALUES (:oid, :n, :c, :s, CURRENT_TIMESTAMP) RETURNING id"
             ),
-            {"oid": body.get("org_id"), "n": name, "c": body.get("code"), "s": body.get("status") or "正常"},
+            params,
         ).mappings().first()
-    return int(r["id"])
+        return int(r["id"])
 
 
 def equipment_update(equipment_id: int, patch: Dict[str, Any]) -> bool:
@@ -152,9 +159,16 @@ def site_log_create(*, user_id: Optional[int], body: Dict[str, Any]) -> int:
         raise ValueError("log_type 必填")
     engine = get_engine()
     with engine.begin() as conn:
+        params = {"oid": body.get("org_id"), "uid": user_id, "t": log_type, "c": body.get("content")}
+        if engine.dialect.name == "sqlite":
+            r = conn.execute(
+                text("INSERT INTO site_log (org_id, user_id, log_type, content) VALUES (:oid, :uid, :t, :c)"),
+                params,
+            )
+            return int(r.lastrowid or 0)
         r = conn.execute(
             text("INSERT INTO site_log (org_id, user_id, log_type, content) VALUES (:oid, :uid, :t, :c) RETURNING id"),
-            {"oid": body.get("org_id"), "uid": user_id, "t": log_type, "c": body.get("content")},
+            params,
         ).mappings().first()
-    return int(r["id"])
+        return int(r["id"])
 

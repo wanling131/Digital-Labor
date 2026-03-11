@@ -140,6 +140,27 @@ def archive_create(body: Dict[str, Any]) -> int:
         raise ValueError("姓名必填")
     engine = get_engine()
     with engine.begin() as conn:
+        params = {
+            "org_id": body.get("org_id"),
+            "work_no": body.get("work_no"),
+            "name": body["name"],
+            "id_card": encrypt(body["id_card"]) if body.get("id_card") else None,
+            "mobile": encrypt(body["mobile"]) if body.get("mobile") else None,
+            "bank_card": encrypt(body["bank_card"]) if body.get("bank_card") else None,
+            "status": body.get("status") or "预注册",
+            "job_title": body.get("job_title"),
+        }
+        if engine.dialect.name == "sqlite":
+            rr = conn.execute(
+                text(
+                    """
+                    INSERT INTO person (org_id, work_no, name, id_card, mobile, bank_card, status, job_title, updated_at)
+                    VALUES (:org_id, :work_no, :name, :id_card, :mobile, :bank_card, :status, :job_title, CURRENT_TIMESTAMP)
+                    """
+                ),
+                params,
+            )
+            return int(rr.lastrowid or 0)
         r = conn.execute(
             text(
                 """
@@ -148,18 +169,9 @@ def archive_create(body: Dict[str, Any]) -> int:
                 RETURNING id
                 """
             ),
-            {
-                "org_id": body.get("org_id"),
-                "work_no": body.get("work_no"),
-                "name": body["name"],
-                "id_card": encrypt(body["id_card"]) if body.get("id_card") else None,
-                "mobile": encrypt(body["mobile"]) if body.get("mobile") else None,
-                "bank_card": encrypt(body["bank_card"]) if body.get("bank_card") else None,
-                "status": body.get("status") or "预注册",
-                "job_title": body.get("job_title"),
-            },
+            params,
         ).mappings().first()
-    return int(r["id"])
+        return int(r["id"])
 
 
 def archive_update(person_id: int, patch: Dict[str, Any]) -> bool:
@@ -337,6 +349,25 @@ def certificate_create(person_id: int, body: Dict[str, Any]) -> Optional[int]:
         exists = conn.execute(text("SELECT 1 FROM person WHERE id = :id"), {"id": person_id}).first()
         if not exists:
             return None
+        params = {
+            "pid": person_id,
+            "n": body["name"],
+            "no": body.get("certificate_no"),
+            "i": body.get("issue_date"),
+            "e": body.get("expiry_date"),
+            "s": body.get("status") or "valid",
+        }
+        if engine.dialect.name == "sqlite":
+            rr = conn.execute(
+                text(
+                    """
+                    INSERT INTO person_certificate (person_id, name, certificate_no, issue_date, expiry_date, status)
+                    VALUES (:pid, :n, :no, :i, :e, :s)
+                    """
+                ),
+                params,
+            )
+            return int(rr.lastrowid or 0)
         r = conn.execute(
             text(
                 """
@@ -345,16 +376,9 @@ def certificate_create(person_id: int, body: Dict[str, Any]) -> Optional[int]:
                 RETURNING id
                 """
             ),
-            {
-                "pid": person_id,
-                "n": body["name"],
-                "no": body.get("certificate_no"),
-                "i": body.get("issue_date"),
-                "e": body.get("expiry_date"),
-                "s": body.get("status") or "valid",
-            },
+            params,
         ).mappings().first()
-    return int(r["id"])
+        return int(r["id"])
 
 
 def certificate_update(person_id: int, cert_id: int, patch: Dict[str, Any]) -> str:

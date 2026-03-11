@@ -7,6 +7,14 @@ from typing import List
 from sqlalchemy import Engine, text
 
 
+def _insert_id(engine: Engine, conn, sql_with_returning: str, sql_no_returning: str, params=None) -> int:
+    params = params or {}
+    if engine.dialect.name == "sqlite":
+        r = conn.execute(text(sql_no_returning), params)
+        return int(r.lastrowid or 0)
+    return int(conn.execute(text(sql_with_returning), params).scalar_one())
+
+
 def _ensure_org(engine: Engine) -> None:
     with engine.begin() as conn:
         n = conn.execute(text("SELECT COUNT(*) FROM org")).scalar_one()
@@ -14,36 +22,41 @@ def _ensure_org(engine: Engine) -> None:
             return
 
         # 简化版组织结构：公司 -> 项目部 -> 两个标段 -> 若干班组
-        company_id = conn.execute(
-            text(
-                "INSERT INTO org (parent_id, name, type, sort, manager) VALUES (0, '某某建设集团有限公司', 'company', 0, '张总') RETURNING id"
-            )
-        ).scalar_one()
-        proj1 = conn.execute(
-            text(
-                "INSERT INTO org (parent_id, name, type, sort, manager) VALUES (:p, '东区项目部', 'project', 0, '李明') RETURNING id"
-            ),
+        company_id = _insert_id(
+            engine,
+            conn,
+            "INSERT INTO org (parent_id, name, type, sort, manager) VALUES (0, '某某建设集团有限公司', 'company', 0, '张总') RETURNING id",
+            "INSERT INTO org (parent_id, name, type, sort, manager) VALUES (0, '某某建设集团有限公司', 'company', 0, '张总')",
+        )
+        proj1 = _insert_id(
+            engine,
+            conn,
+            "INSERT INTO org (parent_id, name, type, sort, manager) VALUES (:p, '东区项目部', 'project', 0, '李明') RETURNING id",
+            "INSERT INTO org (parent_id, name, type, sort, manager) VALUES (:p, '东区项目部', 'project', 0, '李明')",
             {"p": company_id},
-        ).scalar_one()
-        proj2 = conn.execute(
-            text(
-                "INSERT INTO org (parent_id, name, type, sort, manager) VALUES (:p, '西区项目部', 'project', 1, '陈刚') RETURNING id"
-            ),
+        )
+        proj2 = _insert_id(
+            engine,
+            conn,
+            "INSERT INTO org (parent_id, name, type, sort, manager) VALUES (:p, '西区项目部', 'project', 1, '陈刚') RETURNING id",
+            "INSERT INTO org (parent_id, name, type, sort, manager) VALUES (:p, '西区项目部', 'project', 1, '陈刚')",
             {"p": company_id},
-        ).scalar_one()
+        )
 
-        seg1 = conn.execute(
-            text(
-                "INSERT INTO org (parent_id, name, type, sort, manager) VALUES (:p, 'A 标段', 'segment', 0, '王建') RETURNING id"
-            ),
+        seg1 = _insert_id(
+            engine,
+            conn,
+            "INSERT INTO org (parent_id, name, type, sort, manager) VALUES (:p, 'A 标段', 'segment', 0, '王建') RETURNING id",
+            "INSERT INTO org (parent_id, name, type, sort, manager) VALUES (:p, 'A 标段', 'segment', 0, '王建')",
             {"p": proj1},
-        ).scalar_one()
-        seg2 = conn.execute(
-            text(
-                "INSERT INTO org (parent_id, name, type, sort, manager) VALUES (:p, 'B 标段', 'segment', 1, NULL) RETURNING id"
-            ),
+        )
+        seg2 = _insert_id(
+            engine,
+            conn,
+            "INSERT INTO org (parent_id, name, type, sort, manager) VALUES (:p, 'B 标段', 'segment', 1, NULL) RETURNING id",
+            "INSERT INTO org (parent_id, name, type, sort, manager) VALUES (:p, 'B 标段', 'segment', 1, NULL)",
             {"p": proj1},
-        ).scalar_one()
+        )
 
         # 班组
         for name, sort in [
@@ -128,26 +141,31 @@ def _ensure_persons(engine: Engine, min_count: int = 20) -> None:
             on_site = 1 if status == "已进场" else 0
             created_at = now - dt.timedelta(days=random.randint(0, 90))
 
-            r = conn.execute(
-                text(
-                    """
-                    INSERT INTO person (org_id, work_no, name, mobile, status, contract_signed, on_site, created_at)
-                    VALUES (:org_id, :work_no, :name, :mobile, :status, :contract_signed, :on_site, :created_at)
-                    RETURNING id
-                    """
-                ),
-                {
-                    "org_id": org_id,
-                    "work_no": f"W{1000 + i}",
-                    "name": name,
-                    "mobile": _random_mobile(),
-                    "status": status,
-                    "contract_signed": contract_signed,
-                    "on_site": on_site,
-                    "created_at": created_at,
-                },
-            ).scalar_one()
-            created_ids.append(int(r))
+            params = {
+                "org_id": org_id,
+                "work_no": f"W{1000 + i}",
+                "name": name,
+                "mobile": _random_mobile(),
+                "status": status,
+                "contract_signed": contract_signed,
+                "on_site": on_site,
+                "created_at": created_at,
+            }
+            pid = _insert_id(
+                engine,
+                conn,
+                """
+                INSERT INTO person (org_id, work_no, name, mobile, status, contract_signed, on_site, created_at)
+                VALUES (:org_id, :work_no, :name, :mobile, :status, :contract_signed, :on_site, :created_at)
+                RETURNING id
+                """,
+                """
+                INSERT INTO person (org_id, work_no, name, mobile, status, contract_signed, on_site, created_at)
+                VALUES (:org_id, :work_no, :name, :mobile, :status, :contract_signed, :on_site, :created_at)
+                """,
+                params,
+            )
+            created_ids.append(int(pid))
 
 
 def _ensure_attendance(engine: Engine, days: int = 10) -> None:

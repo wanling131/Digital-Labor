@@ -37,17 +37,25 @@ def template_create(body: Dict[str, Any]) -> int:
         raise ValueError("name 必填")
     engine = get_engine()
     with engine.begin() as conn:
-        r = conn.execute(
-            text(
-                """
-                INSERT INTO contract_template (name, file_path, content, is_visual)
-                VALUES (:n, :p, :c, :v)
-                RETURNING id
-                """
-            ),
-            {"n": body["name"], "p": body.get("file_path"), "c": body.get("content"), "v": 1 if body.get("content") else 0},
-        ).mappings().first()
-        tid = int(r["id"])
+        params = {"n": body["name"], "p": body.get("file_path"), "c": body.get("content"), "v": 1 if body.get("content") else 0}
+        if engine.dialect.name == "sqlite":
+            rr = conn.execute(
+                text("INSERT INTO contract_template (name, file_path, content, is_visual) VALUES (:n, :p, :c, :v)"),
+                params,
+            )
+            tid = int(rr.lastrowid or 0)
+        else:
+            r = conn.execute(
+                text(
+                    """
+                    INSERT INTO contract_template (name, file_path, content, is_visual)
+                    VALUES (:n, :p, :c, :v)
+                    RETURNING id
+                    """
+                ),
+                params,
+            ).mappings().first()
+            tid = int(r["id"])
         for v in body.get("variables") or []:
             conn.execute(
                 text(
@@ -121,11 +129,15 @@ def template_upload_save(*, filename: str, content: bytes, name: Optional[str]) 
     tpl_name = (name or "").strip() or filename or "未命名模板"
     engine = get_engine()
     with engine.begin() as conn:
+        params = {"n": tpl_name, "p": rel}
+        if engine.dialect.name == "sqlite":
+            rr = conn.execute(text("INSERT INTO contract_template (name, file_path) VALUES (:n, :p)"), params)
+            return int(rr.lastrowid or 0)
         r = conn.execute(
             text("INSERT INTO contract_template (name, file_path) VALUES (:n, :p) RETURNING id"),
-            {"n": tpl_name, "p": rel},
+            params,
         ).mappings().first()
-    return int(r["id"])
+        return int(r["id"])
 
 
 def template_file_path(template_id: int) -> Optional[str]:
