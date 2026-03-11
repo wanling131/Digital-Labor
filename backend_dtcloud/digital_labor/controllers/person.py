@@ -171,7 +171,7 @@ def auth_list(request: Request):
         where.append("p.job_title = :job_title")
         params["job_title"] = job_title
     if keyword:
-        where.append("(p.name ILIKE :kw OR p.work_no ILIKE :kw OR o.name ILIKE :kw)")
+        where.append("(LOWER(p.name) LIKE LOWER(:kw) OR LOWER(p.work_no) LIKE LOWER(:kw) OR LOWER(o.name) LIKE LOWER(:kw))")
         params["kw"] = f"%{keyword}%"
 
     where_sql = (" AND " + " AND ".join(where)) if where else ""

@@ -10,7 +10,7 @@ from digital_labor.db import get_engine
 def leave(person_id: int) -> dict:
     engine = get_engine()
     with engine.begin() as conn:
-        conn.execute(text("UPDATE person SET on_site = 0, updated_at = now() WHERE id = :id"), {"id": person_id})
+        conn.execute(text("UPDATE person SET on_site = 0, updated_at = CURRENT_TIMESTAMP WHERE id = :id"), {"id": person_id})
     return {"ok": True}
 
 
@@ -60,7 +60,7 @@ def equipment_list(*, filters: Dict[str, Any], limit: int, offset: int) -> dict:
                 SELECT e.*, o.name as org_name
                 FROM equipment e LEFT JOIN org o ON e.org_id=o.id
                 {where_sql}
-                ORDER BY e.updated_at DESC NULLS LAST, e.id DESC
+                ORDER BY e.updated_at DESC, e.id DESC
                 LIMIT :limit OFFSET :offset
                 """
             ),
@@ -76,7 +76,9 @@ def equipment_create(body: Dict[str, Any]) -> int:
     engine = get_engine()
     with engine.begin() as conn:
         r = conn.execute(
-            text("INSERT INTO equipment (org_id, name, code, status, updated_at) VALUES (:oid, :n, :c, :s, now()) RETURNING id"),
+            text(
+                "INSERT INTO equipment (org_id, name, code, status, updated_at) VALUES (:oid, :n, :c, :s, CURRENT_TIMESTAMP) RETURNING id"
+            ),
             {"oid": body.get("org_id"), "n": name, "c": body.get("code"), "s": body.get("status") or "正常"},
         ).mappings().first()
     return int(r["id"])
@@ -88,7 +90,7 @@ def equipment_update(equipment_id: int, patch: Dict[str, Any]) -> bool:
         exists = conn.execute(text("SELECT id FROM equipment WHERE id = :id"), {"id": equipment_id}).first()
     if not exists:
         return False
-    updates = ["updated_at = now()"]
+    updates = ["updated_at = CURRENT_TIMESTAMP"]
     params: Dict[str, Any] = {"id": equipment_id}
     for k in ("name", "code", "status"):
         if k in patch:

@@ -15,6 +15,11 @@ from .seed_data import seed_minimal
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DOCS_DIR = ROOT / "docs"
 POSTGRES_SCHEMA_PATH = ROOT / "backend_dtcloud" / "scripts" / "postgres_schema.sql"
+SQLITE_SCHEMA_PATH = ROOT / "database" / "sqlite_schema.sql"
+
+
+def _is_sqlite_url(url: str) -> bool:
+    return url.strip().lower().startswith("sqlite:")
 
 
 def _apply_postgres_schema(database_url: str) -> None:
@@ -32,26 +37,52 @@ def _apply_postgres_schema(database_url: str) -> None:
         raw.close()
 
 
+def _apply_sqlite_schema(database_url: str) -> None:
+    if not SQLITE_SCHEMA_PATH.is_file():
+        raise SystemExit(f"sqlite_schema.sql 不存在：{SQLITE_SCHEMA_PATH}")
+
+    sql = SQLITE_SCHEMA_PATH.read_text(encoding="utf-8")
+    engine = get_engine(database_url)
+    raw = engine.raw_connection()
+    try:
+        cur = raw.cursor()
+        cur.executescript(sql)
+        raw.commit()
+    finally:
+        raw.close()
+
+
 def _ensure_admin_user(database_url: str) -> None:
     engine = get_engine(database_url)
     with engine.begin() as conn:
-        conn.execute(
-            text(
-                """
-                INSERT INTO "user" (username, password_hash, name, role, enabled)
-                VALUES ('admin', '123456', '管理员', 'admin', 1)
-                ON CONFLICT (username) DO NOTHING
-                """
+        if _is_sqlite_url(database_url):
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO "user" (username, password_hash, name, role, enabled)
+                    VALUES ('admin', '123456', '管理员', 'admin', 1)
+                    ON CONFLICT(username) DO NOTHING
+                    """
+                )
             )
-        )
+        else:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO "user" (username, password_hash, name, role, enabled)
+                    VALUES ('admin', '123456', '管理员', 'admin', 1)
+                    ON CONFLICT (username) DO NOTHING
+                    """
+                )
+            )
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Init PostgreSQL schema and import Excel data.")
+    parser = argparse.ArgumentParser(description="Init schema (PostgreSQL/SQLite) and import Excel data.")
     parser.add_argument(
         "--database-url",
         default="",
-        help="Override DATABASE_URL for PostgreSQL (fallback to env or backend_dtcloud settings).",
+        help="Override DATABASE_URL (fallback to env or backend_dtcloud settings).",
     )
     parser.add_argument(
         "--docs-dir",
@@ -68,8 +99,12 @@ def main() -> None:
     url = get_database_url(args.database_url or None)
 
     print("[init] 使用 DATABASE_URL =", url)
-    print("[init] 1) 应用 PostgreSQL 表结构 ...")
-    _apply_postgres_schema(url)
+    if _is_sqlite_url(url):
+        print("[init] 1) 应用 SQLite 表结构 ...")
+        _apply_sqlite_schema(url)
+    else:
+        print("[init] 1) 应用 PostgreSQL 表结构 ...")
+        _apply_postgres_schema(url)
     print("[init] 2) 确保 admin 用户存在 ...")
     _ensure_admin_user(url)
 

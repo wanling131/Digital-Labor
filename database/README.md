@@ -2,6 +2,18 @@
 
 本目录用于在 **PostgreSQL** 中快速建表、导入 Excel 数据，并按需补充虚拟数据，方便在没有主开发机的环境下临时准备一套可用数据库。
 
+## SQLite 演示库（无需额外安装软件，推荐演示）
+
+如果只是演示（不想安装 PostgreSQL），可以直接使用 **SQLite 文件库**：
+
+```bash
+# 在仓库根目录
+$env:DATABASE_URL="sqlite:///./database/demo.sqlite3"
+npm run seed
+```
+
+生成的 `database/demo.sqlite3` 可直接拷贝给其他同事复用（注意不要包含真实生产数据）。
+
 ### 前置条件
 
 - 已安装并启动 PostgreSQL，且已创建目标数据库（例如 `digital_labor`）。

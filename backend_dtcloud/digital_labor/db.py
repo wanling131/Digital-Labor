@@ -14,8 +14,12 @@ _CONNECT_TIMEOUT = 5
 
 @lru_cache(maxsize=1)
 def get_engine() -> Engine:
+    url = settings.database_url
+    # sqlite 不支持 connect_timeout 这个参数
+    if url.strip().lower().startswith("sqlite:"):
+        return create_engine(url, future=True, pool_pre_ping=True)
     return create_engine(
-        settings.database_url,
+        url,
         future=True,
         pool_pre_ping=True,
         connect_args={"connect_timeout": _CONNECT_TIMEOUT},

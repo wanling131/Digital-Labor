@@ -22,6 +22,19 @@ def health() -> Tuple[Dict[str, Any], int]:
 
 def database_stats() -> dict:
     engine = get_engine()
+    if engine.dialect.name == "sqlite":
+        with engine.connect() as conn:
+            tables = conn.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+            ).mappings().all()
+            stats = []
+            for t in tables:
+                name = t["name"]
+                cnt = conn.execute(text(f'SELECT COUNT(*) FROM "{name}"')).scalar_one()
+                stats.append({"name": name, "rowCount": int(cnt)})
+            idx_cnt = conn.execute(text("SELECT COUNT(*) FROM sqlite_master WHERE type='index'")).scalar_one()
+        return {"tables": stats, "indexCount": int(idx_cnt)}
+
     with engine.connect() as conn:
         tables = conn.execute(
             text(

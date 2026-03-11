@@ -89,7 +89,7 @@ def import_from_excel_rows(rows: List[Tuple[Any, ...]]) -> dict:
                 text(
                     """
                     INSERT INTO attendance (person_id, org_id, work_date, clock_in, clock_out, hours)
-                    VALUES (:pid, :oid, :d::date, :ci, :co, :h)
+                    VALUES (:pid, :oid, :d, :ci, :co, :h)
                     ON CONFLICT (person_id, work_date)
                     DO UPDATE SET org_id = EXCLUDED.org_id, clock_in = EXCLUDED.clock_in, clock_out = EXCLUDED.clock_out, hours = EXCLUDED.hours
                     """
@@ -125,10 +125,10 @@ def report(*, filters: Dict[str, Any], limit: int, offset: int) -> dict:
         where.append("(a.org_id = :oid OR p.org_id = :oid)")
         params["oid"] = int(org_id)
     if start:
-        where.append("a.work_date >= :start::date")
+        where.append("DATE(a.work_date) >= DATE(:start)")
         params["start"] = start
     if end:
-        where.append("a.work_date <= :end::date")
+        where.append("DATE(a.work_date) <= DATE(:end)")
         params["end"] = end
     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
     engine = get_engine()
@@ -164,7 +164,7 @@ def my_attendance(*, person_id: int, year: Optional[str], month: Optional[str]) 
         if y and 1 <= m <= 12:
             start = f"{y}-{str(m).zfill(2)}-01"
             end = (dt.date(y, m, 1) + dt.timedelta(days=32)).replace(day=1) - dt.timedelta(days=1)
-            sql += " AND a.work_date >= :start::date AND a.work_date <= :end::date"
+            sql += " AND DATE(a.work_date) >= DATE(:start) AND DATE(a.work_date) <= DATE(:end)"
             params["start"] = start
             params["end"] = end.isoformat()
     sql += " ORDER BY a.work_date DESC LIMIT 200"
@@ -186,7 +186,7 @@ def clock(*, person_id: int, typ: str) -> dict:
     with engine.begin() as conn:
         org_id = conn.execute(text("SELECT org_id FROM person WHERE id = :id"), {"id": person_id}).scalar()
         row = conn.execute(
-            text("SELECT id, clock_in, clock_out FROM attendance WHERE person_id = :pid AND work_date = :d::date"),
+            text("SELECT id, clock_in, clock_out FROM attendance WHERE person_id = :pid AND work_date = :d"),
             {"pid": person_id, "d": work_date},
         ).mappings().first()
         if row:
@@ -199,7 +199,7 @@ def clock(*, person_id: int, typ: str) -> dict:
                 text(
                     """
                     INSERT INTO attendance (person_id, org_id, work_date, clock_in, clock_out)
-                    VALUES (:pid, :oid, :d::date, :ci, :co)
+                    VALUES (:pid, :oid, :d, :ci, :co)
                     """
                 ),
                 {"pid": person_id, "oid": org_id, "d": work_date, "ci": time_str if typ == "in" else None, "co": time_str if typ == "out" else None},

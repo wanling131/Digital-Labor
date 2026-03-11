@@ -36,6 +36,6 @@ def mark_read(*, worker_id: int, notify_id: int) -> bool:
     if not row:
         return False
     with engine.begin() as conn:
-        conn.execute(text("UPDATE notification SET read_at = now() WHERE id = :nid"), {"nid": notify_id})
+        conn.execute(text("UPDATE notification SET read_at = CURRENT_TIMESTAMP WHERE id = :nid"), {"nid": notify_id})
     return True
 

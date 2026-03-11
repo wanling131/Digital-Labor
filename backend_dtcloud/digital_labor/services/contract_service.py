@@ -205,13 +205,13 @@ def archive_list(*, filters: Dict[str, Any], limit: int, offset: int) -> dict:
         where.append("p.org_id = :oid")
         params["oid"] = int(org_id)
     if title:
-        where.append("ci.title ILIKE :title")
+        where.append("LOWER(ci.title) LIKE LOWER(:title)")
         params["title"] = f"%{title}%"
     if date_from:
-        where.append("ci.signed_at::date >= :df::date")
+        where.append("DATE(ci.signed_at) >= DATE(:df)")
         params["df"] = date_from
     if date_to:
-        where.append("ci.signed_at::date <= :dt::date")
+        where.append("DATE(ci.signed_at) <= DATE(:dt)")
         params["dt"] = date_to
     where_sql = " WHERE " + " AND ".join(where)
     engine = get_engine()
@@ -225,7 +225,7 @@ def archive_list(*, filters: Dict[str, Any], limit: int, offset: int) -> dict:
                 JOIN person p ON ci.person_id=p.id
                 LEFT JOIN org o ON p.org_id=o.id
                 {where_sql}
-                ORDER BY ci.signed_at DESC NULLS LAST
+                ORDER BY ci.signed_at DESC
                 LIMIT :limit OFFSET :offset
                 """
             ),
@@ -254,7 +254,7 @@ def my_signed(person_id: int) -> dict:
                        p.signature_image as person_signature_image
                 FROM contract_instance ci JOIN person p ON ci.person_id=p.id
                 WHERE ci.person_id=:pid AND ci.status='已签署'
-                ORDER BY ci.signed_at DESC NULLS LAST
+                ORDER BY ci.signed_at DESC
                 """
             ),
             {"pid": person_id},
@@ -275,7 +275,10 @@ def sign(*, contract_id: int, person_id: int) -> str:
 
     paths = get_paths()
     with engine.begin() as conn:
-        conn.execute(text("UPDATE contract_instance SET status='已签署', signed_at=now() WHERE id=:id"), {"id": contract_id})
+        conn.execute(
+            text("UPDATE contract_instance SET status='已签署', signed_at=CURRENT_TIMESTAMP WHERE id=:id"),
+            {"id": contract_id},
+        )
         conn.execute(text("UPDATE person SET contract_signed=1 WHERE id=:id"), {"id": int(row["person_id"])})
         try:
             person = conn.execute(text("SELECT signature_image FROM person WHERE id=:id"), {"id": int(row["person_id"])}).mappings().first()

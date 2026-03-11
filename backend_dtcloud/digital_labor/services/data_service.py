@@ -26,17 +26,30 @@ def board_payload() -> dict:
         total = int((r or {}).get("total") or 0)
         pending_real_name = int((r or {}).get("pendingrealname") or (r or {}).get("pendingRealName") or 0)
 
-        contract_expiring = int(
-            conn.execute(
-                text(
-                    """
-                    SELECT COUNT(*) FROM contract_instance
-                    WHERE status='已签署' AND deadline IS NOT NULL
-                      AND deadline >= CURRENT_DATE AND deadline <= CURRENT_DATE + INTERVAL '30 days'
-                    """
-                )
-            ).scalar_one()
-        )
+        if engine.dialect.name == "sqlite":
+            contract_expiring = int(
+                conn.execute(
+                    text(
+                        """
+                        SELECT COUNT(*) FROM contract_instance
+                        WHERE status='已签署' AND deadline IS NOT NULL
+                          AND DATE(deadline) >= DATE('now') AND DATE(deadline) <= DATE('now', '+30 day')
+                        """
+                    )
+                ).scalar_one()
+            )
+        else:
+            contract_expiring = int(
+                conn.execute(
+                    text(
+                        """
+                        SELECT COUNT(*) FROM contract_instance
+                        WHERE status='已签署' AND deadline IS NOT NULL
+                          AND deadline >= CURRENT_DATE AND deadline <= CURRENT_DATE + INTERVAL '30 days'
+                        """
+                    )
+                ).scalar_one()
+            )
 
         pending_contract = int(conn.execute(text("SELECT COUNT(*) FROM contract_instance WHERE status='待签署'")).scalar_one())
         pending_settlement = int(conn.execute(text("SELECT COUNT(*) FROM settlement WHERE status='待确认'")).scalar_one())
@@ -146,13 +159,20 @@ def board_trend_payload(days: int) -> dict:
 
     engine = get_engine()
     with engine.connect() as conn:
+        is_sqlite = engine.dialect.name == "sqlite"
+        date_expr_person = "DATE(created_at)" if is_sqlite else "created_at::date"
+        date_expr_signed = "DATE(signed_at)" if is_sqlite else "signed_at::date"
+        date_expr_att = "DATE(work_date)" if is_sqlite else "work_date"
+        start_cmp = "DATE(:s)" if is_sqlite else ":s::date"
+        end_cmp = "DATE(:e)" if is_sqlite else ":e::date"
+
         daily_person = conn.execute(
             text(
-                """
-                SELECT created_at::date as date, COUNT(*) as count
+                f"""
+                SELECT {date_expr_person} as date, COUNT(*) as count
                 FROM person
-                WHERE created_at::date >= :s::date AND created_at::date <= :e::date
-                GROUP BY created_at::date
+                WHERE {date_expr_person} >= {start_cmp} AND {date_expr_person} <= {end_cmp}
+                GROUP BY {date_expr_person}
                 ORDER BY date
                 """
             ),
@@ -160,12 +180,12 @@ def board_trend_payload(days: int) -> dict:
         ).mappings().all()
         daily_signed = conn.execute(
             text(
-                """
-                SELECT signed_at::date as date, COUNT(*) as count
+                f"""
+                SELECT {date_expr_signed} as date, COUNT(*) as count
                 FROM contract_instance
                 WHERE status='已签署' AND signed_at IS NOT NULL
-                  AND signed_at::date >= :s::date AND signed_at::date <= :e::date
-                GROUP BY signed_at::date
+                  AND {date_expr_signed} >= {start_cmp} AND {date_expr_signed} <= {end_cmp}
+                GROUP BY {date_expr_signed}
                 ORDER BY date
                 """
             ),
@@ -173,12 +193,12 @@ def board_trend_payload(days: int) -> dict:
         ).mappings().all()
         daily_att = conn.execute(
             text(
-                """
-                SELECT work_date as date, COUNT(*) as count, SUM(hours) as total_hours
+                f"""
+                SELECT {date_expr_att} as date, COUNT(*) as count, SUM(hours) as total_hours
                 FROM attendance
-                WHERE work_date >= :s::date AND work_date <= :e::date
-                GROUP BY work_date
-                ORDER BY work_date
+                WHERE {date_expr_att} >= {start_cmp} AND {date_expr_att} <= {end_cmp}
+                GROUP BY {date_expr_att}
+                ORDER BY date
                 """
             ),
             {"s": start_str, "e": end_str},

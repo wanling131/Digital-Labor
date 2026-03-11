@@ -5,7 +5,7 @@ import shutil
 import urllib.parse
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from digital_labor.db import get_engine
 from digital_labor.paths import get_paths
@@ -65,7 +65,7 @@ def generate(period_start: str, period_end: str) -> dict:
                 """
                 SELECT person_id, SUM(hours) as total_hours
                 FROM attendance
-                WHERE work_date >= :s::date AND work_date <= :e::date
+                WHERE DATE(work_date) >= DATE(:s) AND DATE(work_date) <= DATE(:e)
                 GROUP BY person_id
                 """
             ),
@@ -77,7 +77,7 @@ def generate(period_start: str, period_end: str) -> dict:
                     text(
                         """
                         INSERT INTO settlement (person_id, period_start, period_end, total_hours, amount_due, status)
-                        VALUES (:pid, :s::date, :e::date, :h, 0, '待确认')
+                        VALUES (:pid, :s, :e, :h, 0, '待确认')
                         ON CONFLICT (person_id, period_start) DO NOTHING
                         """
                     ),
@@ -113,13 +113,13 @@ def confirm(
     if actor.get("workerId") and int(st["person_id"]) != int(actor["workerId"]):
         return "forbidden"
 
-    updates = ["updated_at = now()"]
+    updates = ["updated_at = CURRENT_TIMESTAMP"]
     params: Dict[str, Any] = {"id": settlement_id}
     if action == "confirm":
         paid = amount_paid is not None and float(amount_paid) > 0
         updates.append("status = :status")
         params["status"] = "已发放" if paid else "已确认"
-        updates.append("confirm_at = now()")
+        updates.append("confirm_at = CURRENT_TIMESTAMP")
         updates.append("confirm_method = :method")
         params["method"] = "worker_h5" if actor.get("workerId") else ("admin_pc" if actor.get("userId") else "unknown")
         if amount_due is not None:
@@ -144,7 +144,7 @@ def confirm(
         conn.execute(text(f"UPDATE settlement SET {', '.join(updates)} WHERE id = :id"), params)
         if action == "confirm":
             conn.execute(
-                text("UPDATE person SET status = '已离场', on_site = 0, updated_at = now() WHERE id = :pid"),
+                text("UPDATE person SET status = '已离场', on_site = 0, updated_at = CURRENT_TIMESTAMP WHERE id = :pid"),
                 {"pid": int(st["person_id"])},
             )
             # 复制签名快照
@@ -177,10 +177,10 @@ def push_notify(ids: Optional[List[int]]) -> dict:
                 text(
                     """
                     SELECT id, person_id, period_start, period_end, total_hours
-                    FROM settlement WHERE status='待确认' AND id = ANY(:ids)
+                    FROM settlement WHERE status='待确认' AND id IN :ids
                     """
-                ),
-                {"ids": ids},
+                ).bindparams(bindparam("ids", expanding=True)),
+                {"ids": list(ids)},
             ).mappings().all()
         else:
             rows = conn.execute(

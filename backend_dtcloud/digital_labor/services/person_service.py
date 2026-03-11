@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from digital_labor.crypto_compat import encrypt, safe_decrypt_then_mask
 from digital_labor.db import get_engine
@@ -83,7 +83,7 @@ def archive_list(
         where.append("p.job_title = :job_title")
         params["job_title"] = job_title
     if keyword:
-        where.append("(p.name ILIKE :kw OR p.work_no ILIKE :kw OR o.name ILIKE :kw)")
+        where.append("(LOWER(p.name) LIKE LOWER(:kw) OR LOWER(p.work_no) LIKE LOWER(:kw) OR LOWER(o.name) LIKE LOWER(:kw))")
         params["kw"] = f"%{keyword}%"
 
     where_sql = (" AND " + " AND ".join(where)) if where else ""
@@ -144,7 +144,7 @@ def archive_create(body: Dict[str, Any]) -> int:
             text(
                 """
                 INSERT INTO person (org_id, work_no, name, id_card, mobile, bank_card, status, job_title, updated_at)
-                VALUES (:org_id, :work_no, :name, :id_card, :mobile, :bank_card, :status, :job_title, now())
+                VALUES (:org_id, :work_no, :name, :id_card, :mobile, :bank_card, :status, :job_title, CURRENT_TIMESTAMP)
                 RETURNING id
                 """
             ),
@@ -169,7 +169,7 @@ def archive_update(person_id: int, patch: Dict[str, Any]) -> bool:
     if not exists:
         return False
 
-    updates = ["updated_at = now()"]
+    updates = ["updated_at = CURRENT_TIMESTAMP"]
     params: Dict[str, Any] = {"id": person_id}
 
     def set_field(col: str, key: str, transform=lambda x: x):  # noqa: B008
@@ -203,7 +203,7 @@ def me_activation(worker_id: int, patch: Dict[str, Any]) -> None:
     if not exists:
         raise LookupError("人员不存在")
 
-    updates = ["updated_at = now()"]
+    updates = ["updated_at = CURRENT_TIMESTAMP"]
     params: Dict[str, Any] = {"id": worker_id}
 
     if "id_card" in patch:
@@ -250,12 +250,17 @@ def status_batch(ids: List[int], status: str) -> None:
     engine = get_engine()
     with engine.begin() as conn:
         conn.execute(
-            text("UPDATE person SET status = :s, updated_at = now() WHERE id = ANY(:ids)"),
-            {"s": status, "ids": ids},
+            text("UPDATE person SET status = :s, updated_at = CURRENT_TIMESTAMP WHERE id IN :ids").bindparams(
+                bindparam("ids", expanding=True)
+            ),
+            {"s": status, "ids": list(ids)},
         )
         on_site = 1 if status == "已进场" else 0 if status == "已离场" else None
         if on_site is not None:
-            conn.execute(text("UPDATE person SET on_site = :v WHERE id = ANY(:ids)"), {"v": on_site, "ids": ids})
+            conn.execute(
+                text("UPDATE person SET on_site = :v WHERE id IN :ids").bindparams(bindparam("ids", expanding=True)),
+                {"v": on_site, "ids": list(ids)},
+            )
 
 
 def job_titles() -> dict:
@@ -273,7 +278,9 @@ def face_verify_mark_passed(person_id: Optional[int]) -> None:
     engine = get_engine()
     with engine.begin() as conn:
         conn.execute(
-            text("UPDATE person SET face_verified = 1, face_verified_at = now(), updated_at = now() WHERE id = :id"),
+            text(
+                "UPDATE person SET face_verified = 1, face_verified_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = :id"
+            ),
             {"id": int(person_id)},
         )
 

@@ -34,7 +34,7 @@ def get_me(worker_id: int) -> Optional[dict]:
 
 
 def update_me(worker_id: int, patch: Dict[str, Any]) -> None:
-    updates = ["updated_at = now()"]
+    updates = ["updated_at = CURRENT_TIMESTAMP"]
     params: Dict[str, Any] = {"id": worker_id}
     if "mobile" in patch:
         updates.append("mobile = :mobile")

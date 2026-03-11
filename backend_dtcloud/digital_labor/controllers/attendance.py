@@ -55,10 +55,10 @@ def report(request: Request):
         where.append("(a.org_id = :oid OR p.org_id = :oid)")
         params["oid"] = int(org_id)
     if start:
-        where.append("a.work_date >= :start::date")
+        where.append("DATE(a.work_date) >= DATE(:start)")
         params["start"] = start
     if end:
-        where.append("a.work_date <= :end::date")
+        where.append("DATE(a.work_date) <= DATE(:end)")
         params["end"] = end
     return ok(svc_report(filters=q, limit=pg.limit, offset=pg.offset))
 
