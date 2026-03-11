@@ -42,6 +42,21 @@ def create_app() -> FastAPI:
         try:
             from sqlalchemy import text
             from digital_labor.db import get_engine
+            from digital_labor.settings import settings
+
+            # SQLite 演示库需要较新的 SQLite 版本（用于 ON CONFLICT / UPSERT 等语法）。
+            # 若系统自带 SQLite 过老，会在运行时出现“near ON: syntax error”之类问题，提前给出明确提示。
+            if settings.database_url.strip().lower().startswith("sqlite:"):
+                import sqlite3
+
+                min_ver = (3, 24, 0)
+                if sqlite3.sqlite_version_info < min_ver:
+                    raise RuntimeError(
+                        "当前 SQLite 版本过低，无法支持演示所需的 UPSERT 语法。"
+                        f"需要 >= {min_ver[0]}.{min_ver[1]}.{min_ver[2]}，"
+                        f"当前为 {sqlite3.sqlite_version}。"
+                        "建议升级 Python/SQLite，或改用 PostgreSQL（DATABASE_URL 指向 PostgreSQL）。"
+                    )
             with get_engine().connect() as conn:
                 conn.execute(text("SELECT 1"))
         except Exception as e:  # noqa: BLE001

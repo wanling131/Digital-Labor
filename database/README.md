@@ -16,6 +16,7 @@ npm run seed
 
 ### 前置条件
 
+- SQLite 版本需 **>= 3.24.0**（用于 `ON CONFLICT`/UPSERT 语法）。一般随 Python 自带的 sqlite3 即可；若版本过低，请升级 Python，或改用 PostgreSQL。
 - 已安装并启动 PostgreSQL，且已创建目标数据库（例如 `digital_labor`）。
 - 已在仓库根目录或 `backend_dtcloud/` 下配置好 `.env`，其中包含：
   - `DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/digital_labor`
