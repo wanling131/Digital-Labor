@@ -1,0 +1,14 @@
+# 仅 FastAPI 运行所需依赖（不包含 dtcloud，便于在 dtcloud 安装失败时仍可启动）
+python-dotenv>=1.0.0
+PyJWT>=2.8.0
+psycopg[binary]>=3.1.18
+SQLAlchemy>=2.0.25
+cryptography>=42.0.0
+openpyxl>=3.1.2
+xlrd>=2.0.1
+requests>=2.31.0
+
+# 为确保 Python 3.8 可用，避免安装到后续可能移除 3.8 支持的版本
+uvicorn>=0.27.0,<0.42
+fastapi>=0.110.0,<0.111
+python-multipart>=0.0.6

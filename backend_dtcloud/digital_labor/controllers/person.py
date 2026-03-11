@@ -1,0 +1,324 @@
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Request
+from pydantic import BaseModel
+
+from digital_labor.pagination import parse_pagination
+from digital_labor.services.person_service import (
+    Page,
+    archive_create as svc_archive_create,
+    archive_delete as svc_archive_delete,
+    archive_get as svc_archive_get,
+    archive_list as svc_archive_list,
+    archive_update as svc_archive_update,
+    certificate_create as svc_certificate_create,
+    certificate_delete as svc_certificate_delete,
+    certificate_update as svc_certificate_update,
+    certificates_list as svc_certificates_list,
+    face_verify_mark_passed as svc_face_verify_mark_passed,
+    face_verify_status as svc_face_verify_status,
+    job_titles as svc_job_titles,
+    me_activation as svc_me_activation,
+    person_simple_get as svc_person_simple_get,
+    status_batch as svc_status_batch,
+    status_counts as svc_status_counts,
+)
+from digital_labor.web.middleware import get_user
+from digital_labor.web.response import err, ok
+
+
+router = APIRouter(prefix="/api/person")
+
+
+@router.get("/archive")
+def archive_list(request: Request):
+    q = dict(request.query_params)
+    pg = parse_pagination(q)
+    data = svc_archive_list(filters=q, page=Page(pg.limit, pg.offset, pg.page, pg.page_size))
+    return ok(data)
+
+
+@router.get("/archive/{person_id}")
+def archive_one(person_id: int):
+    row = svc_archive_get(person_id)
+    if not row:
+        return err(404, "不存在")
+    return ok(row)
+
+
+class PersonCreate(BaseModel):
+    org_id: Optional[int] = None
+    work_no: Optional[str] = None
+    name: str
+    id_card: Optional[str] = None
+    mobile: Optional[str] = None
+    bank_card: Optional[str] = None
+    status: str = "预注册"
+    job_title: Optional[str] = None
+
+
+@router.post("/archive")
+def archive_create(body: PersonCreate):
+    try:
+        new_id = svc_archive_create(body.model_dump())
+    except ValueError as e:
+        return err(400, str(e))
+    return ok({"id": new_id})
+
+
+class PersonUpdate(BaseModel):
+    org_id: Optional[int] = None
+    work_no: Optional[str] = None
+    name: Optional[str] = None
+    id_card: Optional[str] = None
+    mobile: Optional[str] = None
+    bank_card: Optional[str] = None
+    status: Optional[str] = None
+    job_title: Optional[str] = None
+    work_address: Optional[str] = None
+    signature_image: Optional[str] = None
+
+
+@router.put("/archive/{person_id}")
+def archive_update(person_id: int, body: PersonUpdate):
+    try:
+        ok_ = svc_archive_update(person_id, body.model_dump(exclude_none=False, exclude_unset=True))
+    except ValueError as e:
+        return err(400, str(e))
+    if not ok_:
+        return err(404, "人员不存在")
+    return ok({"ok": True})
+
+
+class ActivationBody(BaseModel):
+    id_card: Optional[str] = None
+    mobile: Optional[str] = None
+    signature_image: Optional[str] = None
+
+
+@router.post("/me/activation")
+def me_activation(request: Request, body: ActivationBody):
+    u = get_user(request)
+    worker_id = u.get("workerId") if u else None
+    if not worker_id:
+        return err(401, "请以工人身份登录")
+
+    try:
+        svc_me_activation(int(worker_id), body.model_dump(exclude_none=False, exclude_unset=True))
+    except LookupError as e:
+        return err(404, str(e))
+    except ValueError as e:
+        return err(400, str(e))
+    return ok({"ok": True})
+
+
+@router.delete("/archive/{person_id}")
+def archive_delete(person_id: int):
+    ok_ = svc_archive_delete(person_id)
+    if not ok_:
+        return err(404, "人员不存在")
+    return ok({"ok": True})
+
+
+@router.get("/status")
+def status_counts():
+    return ok(svc_status_counts())
+
+
+class BatchStatus(BaseModel):
+    ids: List[int]
+    status: str
+
+
+@router.post("/status/batch")
+def status_batch(body: BatchStatus):
+    if not body.ids or not body.status:
+        return err(400, "ids 数组和 status 必填")
+    svc_status_batch(body.ids, body.status)
+    return ok({"ok": True})
+
+
+@router.get("/job-titles")
+def job_titles():
+    return ok(svc_job_titles())
+
+
+@router.get("/auth")
+def auth_list(request: Request):
+    q = dict(request.query_params)
+    filled = q.get("filled")
+    status = q.get("status")
+    org_id = q.get("org_id")
+    keyword = (q.get("keyword") or "").strip()
+    job_title = q.get("job_title")
+    pg = parse_pagination(q)
+
+    where = []
+    params: Dict[str, Any] = {"limit": pg.limit, "offset": pg.offset}
+    if filled == "1":
+        where.append("TRIM(COALESCE(p.id_card,'')) != '' AND TRIM(COALESCE(p.mobile,'')) != ''")
+    if filled == "0":
+        where.append("(TRIM(COALESCE(p.id_card,'')) = '' OR TRIM(COALESCE(p.mobile,'')) = '')")
+    if status:
+        where.append("p.status = :status")
+        params["status"] = status
+    if org_id:
+        where.append("p.org_id = :org_id")
+        params["org_id"] = int(org_id)
+    if job_title:
+        where.append("p.job_title = :job_title")
+        params["job_title"] = job_title
+    if keyword:
+        where.append("(p.name ILIKE :kw OR p.work_no ILIKE :kw OR o.name ILIKE :kw)")
+        params["kw"] = f"%{keyword}%"
+
+    where_sql = (" AND " + " AND ".join(where)) if where else ""
+
+    engine = get_engine()
+    with engine.connect() as conn:
+        total = conn.execute(
+            text(f"SELECT COUNT(*) FROM person p LEFT JOIN org o ON p.org_id=o.id WHERE 1=1{where_sql}"),
+            params,
+        ).scalar_one()
+        rows = conn.execute(
+            text(
+                f"""
+                SELECT p.id, p.work_no, p.name, p.id_card, p.mobile, p.status, p.updated_at, p.auth_review_status,
+                       p.face_verified, p.face_verified_at, o.name as org_name
+                FROM person p LEFT JOIN org o ON p.org_id=o.id
+                WHERE 1=1{where_sql}
+                ORDER BY p.updated_at DESC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            params,
+        ).mappings().all()
+
+    out = []
+    for r in rows:
+        d = dict(r)
+        id_filled = bool(d.get("id_card") and str(d["id_card"]).strip())
+        mobile_filled = bool(d.get("mobile") and str(d["mobile"]).strip())
+        d["id_card"] = safe_decrypt_then_mask(d.get("id_card"), "idCard") if d.get("id_card") else d.get("id_card")
+        d["mobile"] = safe_decrypt_then_mask(d.get("mobile"), "mobile") if d.get("mobile") else d.get("mobile")
+        d["id_filled"] = id_filled
+        d["mobile_filled"] = mobile_filled
+        d["filled"] = id_filled and mobile_filled
+        d["face_verified"] = bool(d.get("face_verified"))
+        out.append(d)
+    return ok({"list": out, "total": int(total), "page": pg.page, "pageSize": pg.page_size})
+
+
+class AuthReviewBody(BaseModel):
+    status: str
+
+
+@router.put("/{person_id}/auth-review")
+def auth_review(person_id: int, body: AuthReviewBody):
+    if body.status not in ("approved", "rejected"):
+        return err(400, "status 须为 approved 或 rejected")
+    engine = get_engine()
+    with engine.connect() as conn:
+        exists = conn.execute(text("SELECT 1 FROM person WHERE id = :id"), {"id": person_id}).first()
+    if not exists:
+        return err(404, "人员不存在")
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE person SET auth_review_status = :s, updated_at = now() WHERE id = :id"),
+            {"s": body.status, "id": person_id},
+        )
+    return ok({"ok": True, "auth_review_status": body.status})
+
+
+class FaceVerifyBody(BaseModel):
+    mode: str = "living"
+    image: Optional[str] = None
+    person_id: Optional[int] = None
+    cert_name: Optional[str] = None
+    cert_no: Optional[str] = None
+    target_image: Optional[str] = None
+    meta_info: Optional[str] = None
+
+
+@router.post("/face-verify")
+def face_verify(body: FaceVerifyBody):
+    # 兼容：未接外部服务时走 mock；只做最基本参数校验
+    if body.mode == "living" and not body.image:
+        return err(400, "活体检测模式需要提供 image")
+    if body.mode == "compare" and (not body.image or not body.target_image):
+        return err(400, "人脸比对模式需要提供 image 和 target_image")
+    if body.mode == "full" and (not body.cert_name or not body.cert_no):
+        return err(400, "实人认证模式需要提供 cert_name 和 cert_no")
+    if body.mode == "full" and not body.meta_info:
+        return err(400, "实人认证需要提供 meta_info（设备环境信息）")
+
+    passed = True
+    svc_face_verify_mark_passed(body.person_id)
+    return ok({"ok": passed, "passed": passed, "message": "核验通过" if passed else "核验未通过", "details": {"mode": body.mode, "mock": True}})
+
+
+@router.get("/{person_id}/face-verify-status")
+def face_verify_status(person_id: int):
+    row = svc_face_verify_status(person_id)
+    if not row:
+        return err(404, "人员不存在")
+    return ok(row)
+
+
+@router.get("/{person_id}")
+def person_simple(person_id: int):
+    row = svc_person_simple_get(person_id)
+    if not row:
+        return err(404, "不存在")
+    return ok(row)
+
+
+@router.get("/archive/{person_id}/certificates")
+def certificates(person_id: int):
+    out = svc_certificates_list(person_id)
+    if out is None:
+        return err(404, "人员不存在")
+    return ok(out)
+
+
+class CertBody(BaseModel):
+    name: str
+    certificate_no: Optional[str] = None
+    issue_date: Optional[str] = None
+    expiry_date: Optional[str] = None
+    status: str = "valid"
+
+
+@router.post("/archive/{person_id}/certificates")
+def cert_create(person_id: int, body: CertBody):
+    try:
+        new_id = svc_certificate_create(person_id, body.model_dump())
+    except ValueError as e:
+        return err(400, str(e))
+    if new_id is None:
+        return err(404, "人员不存在")
+    return ok({"id": new_id})
+
+
+@router.put("/archive/{person_id}/certificates/{cert_id}")
+def cert_update(person_id: int, cert_id: int, body: CertBody):
+    try:
+        r = svc_certificate_update(person_id, cert_id, body.model_dump(exclude_none=False, exclude_unset=True))
+    except ValueError as e:
+        return err(400, str(e))
+    if r == "no_person":
+        return err(404, "人员不存在")
+    if r == "no_cert":
+        return err(404, "证书不存在")
+    return ok({"ok": True})
+
+
+@router.delete("/archive/{person_id}/certificates/{cert_id}")
+def cert_delete(person_id: int, cert_id: int):
+    r = svc_certificate_delete(person_id, cert_id)
+    if r == "no_cert":
+        return err(404, "证书不存在")
+    return ok({"ok": True})
+

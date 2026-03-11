@@ -4,20 +4,24 @@
   "private": true,
   "description": "Digital Labor 管理平台（前后端分离）",
   "scripts": {
-    "dev": "concurrently -n api,web \"npm run dev:server\" \"npm run dev:web\"",
-    "dev:server": "cd server && npm run dev",
+    "dev": "concurrently -n api,web \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "node scripts/run-api.mjs --reload",
+    "dev:server:legacy": "cd server && npm run dev",
     "dev:web": "cd web && npm run dev",
     "build": "npm run build:web",
     "build:web": "cd web && npm run build",
-    "start": "npm run start:server",
-    "start:server": "cd server && npm run start",
+    "start": "npm run start:api",
+    "start:api": "node scripts/run-api.mjs",
+    "start:server:legacy": "cd server && npm run start",
     "install:all": "npm install && cd server && npm install && cd ../web && npm install",
     "test": "npm run test:server",
-    "test:server": "cd server && npm test",
+    "test:server": "cd backend_dtcloud && python scripts/compat_check.py --new http://localhost:3000 --new-only",
+    "test:server:legacy": "cd server && npm test",
     "test:web": "cd web && npm run build",
     "test:connectivity": "node scripts/connectivity-test.mjs",
     "test:all": "npm run test:server && npm run test:web",
-    "seed": "cd server && npm run seed"
+    "seed": "cd database && python init_and_import.py --with-seed",
+    "seed:legacy": "cd server && npm run seed"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
