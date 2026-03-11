@@ -27,6 +27,8 @@ from digital_labor.services.contract_service import template_list as svc_templat
 from digital_labor.services.contract_service import template_render as svc_template_render
 from digital_labor.services.contract_service import template_update as svc_template_update
 from digital_labor.services.contract_service import template_upload_save as svc_template_upload_save
+from digital_labor.services.contract_service import template_copy as svc_template_copy
+from digital_labor.services.contract_service import template_delete as svc_template_delete
 from digital_labor.web.middleware import get_user, require_worker
 from digital_labor.web.response import err, ok
 
@@ -82,6 +84,22 @@ def template_update(template_id: int, body: TemplateBody):
     except ValueError as e:
         return err(400, str(e))
     return ok({"id": template_id})
+
+
+@router.post("/template/{template_id}/copy")
+def template_copy(template_id: int):
+    new_id = svc_template_copy(template_id)
+    if not new_id:
+        return err(404, "模板不存在")
+    return ok({"id": new_id})
+
+
+@router.delete("/template/{template_id}")
+def template_delete(template_id: int):
+    ok_flag = svc_template_delete(template_id)
+    if not ok_flag:
+        return err(404, "模板不存在")
+    return ok({"ok": True})
 
 
 @router.post("/template/{template_id}/render")

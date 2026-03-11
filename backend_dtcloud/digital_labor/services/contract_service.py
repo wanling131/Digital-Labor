@@ -76,6 +76,77 @@ def template_create(body: Dict[str, Any]) -> int:
     return tid
 
 
+def template_copy(template_id: int) -> Optional[int]:
+    """
+    复制模板及其变量，返回新模板 ID。
+    """
+    engine = get_engine()
+    with engine.connect() as conn:
+        tpl = conn.execute(text("SELECT * FROM contract_template WHERE id = :id"), {"id": template_id}).mappings().first()
+        if not tpl:
+            return None
+        vars_ = conn.execute(text("SELECT * FROM template_variable WHERE template_id = :id"), {"id": template_id}).mappings().all()
+
+    name = str(tpl.get("name") or "").strip() or "未命名模板"
+    new_name = f"{name} 副本"
+    engine = get_engine()
+    with engine.begin() as conn:
+        params = {
+            "n": new_name,
+            "p": tpl.get("file_path"),
+            "c": tpl.get("content"),
+            "v": int(tpl.get("is_visual") or 0),
+        }
+        if engine.dialect.name == "sqlite":
+            rr = conn.execute(
+                text("INSERT INTO contract_template (name, file_path, content, is_visual) VALUES (:n, :p, :c, :v)"),
+                params,
+            )
+            new_id = int(rr.lastrowid or 0)
+        else:
+            r = conn.execute(
+                text(
+                    """
+                    INSERT INTO contract_template (name, file_path, content, is_visual)
+                    VALUES (:n, :p, :c, :v)
+                    RETURNING id
+                    """
+                ),
+                params,
+            ).mappings().first()
+            new_id = int(r["id"])
+
+        for v in vars_:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO template_variable (template_id, name, label, type, options, required)
+                    VALUES (:tid, :n, :l, :t, :o, :r)
+                    """
+                ),
+                {
+                    "tid": new_id,
+                    "n": v.get("name"),
+                    "l": v.get("label"),
+                    "t": v.get("type") or "text",
+                    "o": None if v.get("options") is None else str(v.get("options")),
+                    "r": 1 if v.get("required") else 0,
+                },
+            )
+    return new_id
+
+
+def template_delete(template_id: int) -> bool:
+    """
+    删除模板及其变量，返回是否删除成功。
+    """
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM template_variable WHERE template_id = :id"), {"id": template_id})
+        r = conn.execute(text("DELETE FROM contract_template WHERE id = :id"), {"id": template_id})
+    return bool(getattr(r, "rowcount", 0))
+
+
 def template_update(template_id: int, body: Dict[str, Any]) -> None:
     if not template_id or not body.get("name"):
         raise ValueError("参数无效")

@@ -48,12 +48,14 @@ type TemplateItem = {
 export default function ContractTemplatePage() {
   const [list, setList] = useState<TemplateItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [keyword, setKeyword] = useState("")
   const [isUploadOpen, setIsUploadOpen] = useState(false)
   const [uploadName, setUploadName] = useState("")
   const [uploadFile, setUploadFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [previewingId, setPreviewingId] = useState<number | null>(null)
+  const [actionId, setActionId] = useState<number | null>(null)
 
   const handlePreview = async (t: TemplateItem) => {
     if (!t.file_path) return
@@ -88,6 +90,37 @@ export default function ContractTemplatePage() {
   useEffect(() => {
     loadList()
   }, [])
+
+  const filteredList = keyword.trim()
+    ? list.filter((t) => t.name.toLowerCase().includes(keyword.trim().toLowerCase()))
+    : list
+
+  const handleCopy = async (id: number) => {
+    if (!id) return
+    setActionId(id)
+    try {
+      await api(`/api/contract/template/${id}/copy`, { method: "POST" })
+      loadList()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "复制失败")
+    } finally {
+      setActionId(null)
+    }
+  }
+
+  const handleDelete = async (id: number) => {
+    if (!id) return
+    if (!window.confirm("确认删除该合同模板？删除后不可恢复。")) return
+    setActionId(id)
+    try {
+      await api(`/api/contract/template/${id}`, { method: "DELETE" })
+      loadList()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "删除失败")
+    } finally {
+      setActionId(null)
+    }
+  }
 
   const handleUpload = async () => {
     if (!uploadName.trim()) {
@@ -129,7 +162,13 @@ export default function ContractTemplatePage() {
           <h1 className="text-2xl font-bold text-foreground">合同模板</h1>
           <p className="text-muted-foreground">管理合同模板，支持版本控制和可视化编辑</p>
         </div>
-        <div className="flex space-x-4">
+        <div className="flex items-center space-x-4">
+          <Input
+            placeholder="搜索模板名称"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            className="w-56"
+          />
           <Button 
             className="gap-2"
             onClick={() => window.location.href = '/pc/contract/template/edit/new'}
@@ -232,7 +271,7 @@ export default function ContractTemplatePage() {
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {list.map((t) => (
+          {filteredList.map((t) => (
             <Card key={t.id} className="group hover:border-primary transition-colors">
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
@@ -271,12 +310,20 @@ export default function ContractTemplatePage() {
                         <Edit className="h-4 w-4" />
                         {t.is_visual ? "编辑模板" : "可视化编辑"}
                       </DropdownMenuItem>
-                      <DropdownMenuItem className="gap-2" disabled>
-                        <Copy className="h-4 w-4" />
+                      <DropdownMenuItem
+                        className="gap-2"
+                        onClick={() => handleCopy(t.id)}
+                        disabled={actionId === t.id}
+                      >
+                        {actionId === t.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
                         复制
                       </DropdownMenuItem>
-                      <DropdownMenuItem className="gap-2 text-destructive" disabled>
-                        <Trash2 className="h-4 w-4" />
+                      <DropdownMenuItem
+                        className="gap-2 text-destructive"
+                        onClick={() => handleDelete(t.id)}
+                        disabled={actionId === t.id}
+                      >
+                        {actionId === t.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                         删除
                       </DropdownMenuItem>
                     </DropdownMenuContent>

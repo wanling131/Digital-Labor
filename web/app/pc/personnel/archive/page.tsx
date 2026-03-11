@@ -329,6 +329,20 @@ export default function PersonnelArchivePage() {
     }
   }
 
+  const handleExport = () => {
+    const params = new URLSearchParams()
+    const hasKeyword = searchTerm.trim().length > 0
+    if (selectedStatus !== "all") params.set("status", selectedStatus)
+    if (selectedOrgId !== "all") params.set("org_id", selectedOrgId)
+    if (selectedJobTitle !== "all") params.set("job_title", selectedJobTitle)
+    if (hasKeyword) params.set("keyword", searchTerm.trim())
+    const qs = params.toString()
+    const url = `/api/person/archive/export${qs ? `?${qs}` : ""}`
+    if (typeof window !== "undefined") {
+      window.open(url, "_blank")
+    }
+  }
+
   return (
     <div className="space-y-6">
         <div className="flex items-center justify-between">
@@ -448,7 +462,7 @@ export default function PersonnelArchivePage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-          <Button variant="outline" className="gap-2">
+          <Button variant="outline" className="gap-2" onClick={handleExport}>
             <Download className="h-4 w-4" />
             导出数据
           </Button>

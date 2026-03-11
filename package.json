@@ -15,16 +15,20 @@
     "start:server:legacy": "cd server && npm run start",
     "install:all": "npm install && cd server && npm install && cd ../web && npm install",
     "test": "npm run test:server",
+    "test:api:blackbox": "node --test test/api.test.mjs && node test/features.test.mjs",
     "test:server": "cd backend_dtcloud && python scripts/compat_check.py --new http://localhost:3000 --new-only",
     "test:server:legacy": "cd server && npm test",
     "test:web": "cd web && npm run build",
     "test:connectivity": "node scripts/connectivity-test.mjs",
     "test:all": "npm run test:server && npm run test:web",
+    "test:e2e": "playwright test test/e2e.test.js",
     "seed": "python database/init_and_import.py --with-seed",
     "seed:legacy": "cd server && npm run seed"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "@playwright/test": "^1.58.2",
+    "concurrently": "^8.2.2",
+    "supertest": "^7.2.2"
   },
   "engines": {
     "node": ">=18"

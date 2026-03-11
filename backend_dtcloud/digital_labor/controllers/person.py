@@ -3,8 +3,15 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Request
+from fastapi.responses import StreamingResponse
+import csv
+import io
+import datetime as dt
 from pydantic import BaseModel
+from sqlalchemy import text
 
+from digital_labor.crypto_compat import safe_decrypt_then_mask
+from digital_labor.db import get_engine
 from digital_labor.pagination import parse_pagination
 from digital_labor.services.person_service import (
     Page,
@@ -38,6 +45,62 @@ def archive_list(request: Request):
     pg = parse_pagination(q)
     data = svc_archive_list(filters=q, page=Page(pg.limit, pg.offset, pg.page, pg.page_size))
     return ok(data)
+
+
+@router.get("/archive/export")
+def archive_export(request: Request):
+    """
+    人员档案导出（CSV），复用当前筛选条件。
+    为避免一次性加载过大数据，这里简单限制最多导出 10000 条。
+    """
+    q = dict(request.query_params)
+    # 复用服务层的过滤逻辑，放大分页上限
+    page = Page(limit=10000, offset=0, page=1, page_size=10000)
+    data = svc_archive_list(filters=q, page=page)
+    rows = data.get("list") or []
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "ID",
+            "工号",
+            "姓名",
+            "身份证号(脱敏)",
+            "手机号(脱敏)",
+            "所属组织",
+            "工种",
+            "状态",
+            "是否签约",
+            "是否在岗",
+            "创建时间",
+        ]
+    )
+    for r in rows:
+        created_at = (r.get("created_at") or "")[:19] if isinstance(r.get("created_at"), str) else r.get("created_at")
+        writer.writerow(
+            [
+                r.get("id") or "",
+                r.get("work_no") or "",
+                r.get("name") or "",
+                r.get("id_card") or "",
+                r.get("mobile") or "",
+                r.get("org_name") or "",
+                r.get("job_title") or "",
+                r.get("status") or "",
+                "是" if r.get("contract_signed") else "否",
+                "是" if r.get("on_site") else "否",
+                created_at or "",
+            ]
+        )
+
+    filename = f"person_export_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue().encode("utf-8-sig")]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/archive/{person_id}")
@@ -242,9 +305,8 @@ class FaceVerifyBody(BaseModel):
     meta_info: Optional[str] = None
 
 
-@router.post("/face-verify")
-def face_verify(body: FaceVerifyBody):
-    # 兼容：未接外部服务时走 mock；只做最基本参数校验
+def _handle_face_verify_common(person_id: Optional[int], body: FaceVerifyBody):
+    # 兼容 Node 行为：不同 mode 的最小参数校验
     if body.mode == "living" and not body.image:
         return err(400, "活体检测模式需要提供 image")
     if body.mode == "compare" and (not body.image or not body.target_image):
@@ -254,9 +316,33 @@ def face_verify(body: FaceVerifyBody):
     if body.mode == "full" and not body.meta_info:
         return err(400, "实人认证需要提供 meta_info（设备环境信息）")
 
+    # person_id 必填，否则无法标记具体人员的人脸认证状态
+    if not person_id:
+        return err(400, "person_id 必填")
+
+    # 当前环境未接入外部厂商，统一走 mock，通过则直接标记人员已通过人脸认证
     passed = True
-    svc_face_verify_mark_passed(body.person_id)
-    return ok({"ok": passed, "passed": passed, "message": "核验通过" if passed else "核验未通过", "details": {"mode": body.mode, "mock": True}})
+    svc_face_verify_mark_passed(person_id)
+    return ok(
+        {
+            "ok": passed,
+            "passed": passed,
+            "message": "核验通过" if passed else "核验未通过",
+            "details": {"mode": body.mode, "mock": True},
+        }
+    )
+
+
+@router.post("/face-verify")
+def face_verify(body: FaceVerifyBody):
+    # 无路径 ID 时，优先使用 body.person_id 兼容旧调用方式
+    return _handle_face_verify_common(body.person_id, body)
+
+
+@router.post("/{person_id}/face-verify")
+def face_verify_for_person(person_id: int, body: FaceVerifyBody):
+    # 兼容 Node 端路径形式：/api/person/:id/face-verify
+    return _handle_face_verify_common(person_id, body)
 
 
 @router.get("/{person_id}/face-verify-status")

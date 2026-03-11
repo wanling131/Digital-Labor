@@ -190,3 +190,58 @@ async def user_import(file: UploadFile):
         return err(500, str(e))
     return ok({"ok": True, "count": r.count, "errors": r.errors})
 
+
+@router.get("/profile")
+def profile(request: Request):
+    """
+    当前登录用户的个人资料（管理端）。
+    """
+    u = get_user(request)
+    user_id = u.get("userId") if u else None
+    if not user_id:
+        return err(401, "未登录")
+    row = sys_admin_service.my_profile(int(user_id))
+    if not row:
+        return err(404, "用户不存在")
+    return ok(row)
+
+
+class ProfileUpdateBody(BaseModel):
+    name: Optional[str] = None
+
+
+@router.put("/profile")
+def profile_update(request: Request, body: ProfileUpdateBody):
+    u = get_user(request)
+    user_id = u.get("userId") if u else None
+    if not user_id:
+        return err(401, "未登录")
+    patch = {k: v for k, v in body.model_dump().items() if v is not None}
+    try:
+        sys_admin_service.profile_update(int(user_id), patch)
+    except ValueError as e:
+        return err(400, str(e))
+    return ok({"ok": True})
+
+
+class ChangePasswordBody(BaseModel):
+    old_password: str
+    new_password: str
+
+
+@router.post("/profile/change-password")
+def change_password(request: Request, body: ChangePasswordBody):
+    u = get_user(request)
+    user_id = u.get("userId") if u else None
+    if not user_id:
+        return err(401, "未登录")
+    try:
+        r = sys_admin_service.change_password(int(user_id), body.old_password, body.new_password)
+    except ValueError as e:
+        return err(400, str(e))
+    if r == "no_user":
+        return err(404, "用户不存在")
+    if r == "bad_old_password":
+        return err(400, "旧密码不正确")
+    return ok({"ok": True})
+

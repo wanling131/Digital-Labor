@@ -65,12 +65,15 @@ def worker_login(*, person_id: Optional[int], work_no: Optional[str], name: Opti
 
     with engine.connect() as conn:
         if not pid and mobile and str(mobile).strip():
+            mobile_s = str(mobile).strip()
             row = conn.execute(
                 text("SELECT id FROM person WHERE mobile = :m LIMIT 1"),
-                {"m": str(mobile).strip()},
+                {"m": mobile_s},
             ).mappings().first()
             if not row:
+                # 严格依赖已有数据，避免通过错误密码暴露手机号是否存在
                 return None
+            # 先校验密码，再确认人员 ID，避免通过行为差异枚举已存在手机号
             if password is not None and str(password).strip() != "" and str(password).strip() != WORKER_DEMO_PASSWORD:
                 return None
             pid = int(row["id"])

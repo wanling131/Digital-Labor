@@ -11,9 +11,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useState } from "react"
+import { useRouter } from "next/navigation"
+import { setToken } from "@/lib/api"
 
 export function Header() {
   const [isDark, setIsDark] = useState(false)
+  const router = useRouter()
 
   const toggleTheme = () => {
     setIsDark(!isDark)
@@ -37,30 +40,15 @@ export function Header() {
           {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
         </Button>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="relative">
-              <Bell className="h-5 w-5" />
-              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-destructive" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-80">
-            <div className="px-4 py-3 font-medium">通知中心</div>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem className="flex flex-col items-start gap-1 py-3">
-              <span className="text-sm font-medium">新的合同待审批</span>
-              <span className="text-xs text-muted-foreground">张三的劳动合同需要您审批</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem className="flex flex-col items-start gap-1 py-3">
-              <span className="text-sm font-medium">考勤数据导入完成</span>
-              <span className="text-xs text-muted-foreground">2024年3月考勤数据已成功导入</span>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem className="justify-center text-primary">
-              查看全部通知
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="relative"
+          onClick={() => router.push("/pc/notifications")}
+        >
+          <Bell className="h-5 w-5" />
+          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-destructive" />
+        </Button>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -76,10 +64,27 @@ export function Header() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem>个人设置</DropdownMenuItem>
-            <DropdownMenuItem>修改密码</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push("/pc/profile")}>
+              个人设置
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push("/pc/profile/security")}>
+              修改密码
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-destructive">退出登录</DropdownMenuItem>
+            <DropdownMenuItem
+              className="text-destructive"
+              onClick={async () => {
+                try {
+                  await fetch("/api/auth/logout", { method: "POST" })
+                } catch {
+                  // 忽略网络错误，依然执行本地登出
+                }
+                setToken(null)
+                router.replace("/login")
+              }}
+            >
+              退出登录
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

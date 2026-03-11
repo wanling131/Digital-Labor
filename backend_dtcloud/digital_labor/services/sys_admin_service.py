@@ -409,6 +409,72 @@ def op_log_list(limit: int, offset: int) -> dict:
     return {"list": [dict(r) for r in rows], "total": int(total)}
 
 
+def my_profile(user_id: int) -> dict:
+    """
+    当前登录用户的个人资料（管理端）。
+    """
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT u.id, u.username, u.name, u.org_id, u.role, u.enabled, u.created_at, o.name AS org_name
+                FROM "user" u LEFT JOIN org o ON u.org_id = o.id
+                WHERE u.id = :id
+                """
+            ),
+            {"id": user_id},
+        ).mappings().first()
+    if not row:
+        return {}
+    return dict(row)
+
+
+def profile_update(user_id: int, patch: Dict[str, Any]) -> None:
+    """
+    更新当前用户的个人资料（目前仅支持 name）。
+    """
+    updates = []
+    params: Dict[str, Any] = {"id": user_id}
+    if "name" in patch:
+        updates.append("name = :name")
+        params["name"] = patch.get("name")
+    if not updates:
+        raise ValueError("无有效字段")
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(text('UPDATE "user" SET ' + ", ".join(updates) + " WHERE id = :id"), params)
+
+
+def change_password(user_id: int, old_password: str, new_password: str) -> str:
+    """
+    修改当前用户密码（演示环境为明文字段 password_hash）。
+    返回:
+      - "ok" 正常修改
+      - "bad_old_password" 旧密码不匹配
+      - "no_user" 用户不存在
+    """
+    if not new_password:
+        raise ValueError("新密码不能为空")
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text('SELECT password_hash FROM "user" WHERE id = :id'),
+            {"id": user_id},
+        ).mappings().first()
+    if not row:
+        return "no_user"
+    current = (row or {}).get("password_hash") or ""
+    if str(current) != str(old_password):
+        return "bad_old_password"
+    with engine.begin() as conn:
+        conn.execute(
+            text('UPDATE "user" SET password_hash = :p WHERE id = :id'),
+            {"p": new_password, "id": user_id},
+        )
+    return "ok"
+
+
 @dataclass
 class UserImportResult:
     count: int

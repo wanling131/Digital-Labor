@@ -78,3 +78,14 @@ def worker_qrcode_login_endpoint(body: WorkerQrBody):
         return err(int(out.get("status") or 400), str(out["error"]))
     return ok(out)
 
+
+@router.post("/logout")
+def logout() -> Any:
+    """
+    管理端退出登录。
+
+    当前 JWT 为无状态实现，服务端无需维护会话，只需让前端清理本地 token。
+    预留接口便于未来接入服务端会话/黑名单。
+    """
+    return ok({"ok": True})
+
