@@ -7,7 +7,10 @@ from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy import Engine, text
 
-from .common import get_database_url, get_engine
+try:
+    from .common import get_database_url, get_engine
+except ImportError:
+    from common import get_database_url, get_engine
 
 
 def _load_workbook(path: str):

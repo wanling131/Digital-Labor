@@ -6,10 +6,18 @@ from pathlib import Path
 
 from sqlalchemy import text
 
-from .common import get_database_url, get_engine
-from .import_person import import_persons
-from .import_attendance import import_attendance_from_file
-from .seed_data import seed_minimal
+try:
+    # 以包方式运行：python -m database.init_and_import
+    from .common import get_database_url, get_engine
+    from .import_attendance import import_attendance_from_file
+    from .import_person import import_persons
+    from .seed_data import seed_minimal
+except ImportError:
+    # 以脚本方式运行：cd database && python init_and_import.py
+    from common import get_database_url, get_engine
+    from import_attendance import import_attendance_from_file
+    from import_person import import_persons
+    from seed_data import seed_minimal
 
 
 ROOT = Path(__file__).resolve().parents[1]

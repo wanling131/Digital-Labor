@@ -20,7 +20,7 @@
     "test:web": "cd web && npm run build",
     "test:connectivity": "node scripts/connectivity-test.mjs",
     "test:all": "npm run test:server && npm run test:web",
-    "seed": "cd database && python init_and_import.py --with-seed",
+    "seed": "python database/init_and_import.py --with-seed",
     "seed:legacy": "cd server && npm run seed"
   },
   "devDependencies": {

@@ -19,6 +19,9 @@ node_modules/
 # 后端数据库与上传文件
 server/data/
 server/uploads/
+database/*.sqlite3
+database/*.db
+database/*.sqlite
 
 # 环境变量（勿提交密钥）
 .env
