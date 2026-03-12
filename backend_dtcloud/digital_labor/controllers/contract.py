@@ -110,12 +110,22 @@ def template_render(template_id: int, data: Dict[str, Any]):
     return ok(out)
 
 
+MAX_TEMPLATE_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB
+ALLOWED_TEMPLATE_EXTENSIONS = {".pdf", ".doc", ".docx"}
+
+
 @router.post("/template/upload")
 async def template_upload(file: UploadFile, name: Optional[str] = None):
     if not file:
         return err(400, "请上传文件")
     data = await file.read()
-    new_id = svc_template_upload_save(filename=file.filename or "file", content=data, name=name)
+    if len(data) > MAX_TEMPLATE_UPLOAD_BYTES:
+        return err(400, f"文件大小超过限制（最大 {MAX_TEMPLATE_UPLOAD_BYTES // (1024*1024)}MB）")
+    fn = (file.filename or "file").strip()
+    ext = os.path.splitext(fn)[1].lower()
+    if ext and ext not in ALLOWED_TEMPLATE_EXTENSIONS:
+        return err(400, f"不支持的文件类型，仅允许: {', '.join(sorted(ALLOWED_TEMPLATE_EXTENSIONS))}")
+    new_id = svc_template_upload_save(filename=fn or "file", content=data, name=name)
     return ok({"id": new_id})
 
 

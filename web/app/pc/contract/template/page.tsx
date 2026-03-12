@@ -35,6 +35,7 @@ import {
   Loader2,
 } from "lucide-react"
 import { api, getToken } from "@/lib/api"
+import { usePermissions } from "@/lib/permissions"
 
 type TemplateItem = {
   id: number
@@ -46,6 +47,7 @@ type TemplateItem = {
 }
 
 export default function ContractTemplatePage() {
+  const { hasPermission } = usePermissions()
   const [list, setList] = useState<TemplateItem[]>([])
   const [loading, setLoading] = useState(true)
   const [keyword, setKeyword] = useState("")
@@ -169,6 +171,7 @@ export default function ContractTemplatePage() {
             onChange={(e) => setKeyword(e.target.value)}
             className="w-56"
           />
+          {hasPermission("contract:add") && (
           <Button 
             className="gap-2"
             onClick={() => window.location.href = '/pc/contract/template/edit/new'}
@@ -176,6 +179,8 @@ export default function ContractTemplatePage() {
             <Plus className="h-4 w-4" />
             创建可视化模板
           </Button>
+          )}
+          {hasPermission("contract:add") && (
           <Dialog open={isUploadOpen} onOpenChange={(open) => { setIsUploadOpen(open); if (!open) setUploadError(null) }}>
             <DialogTrigger asChild>
               <Button className="gap-2">
@@ -220,6 +225,7 @@ export default function ContractTemplatePage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          )}
         </div>
       </div>
 
@@ -303,6 +309,7 @@ export default function ContractTemplatePage() {
                         {previewingId === t.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
                         {t.file_path ? "预览" : "预览（需先上传文件）"}
                       </DropdownMenuItem>
+                      {hasPermission("contract:edit") && (
                       <DropdownMenuItem 
                         className="gap-2"
                         onClick={() => window.location.href = `/pc/contract/template/edit/${t.id}`}
@@ -310,6 +317,8 @@ export default function ContractTemplatePage() {
                         <Edit className="h-4 w-4" />
                         {t.is_visual ? "编辑模板" : "可视化编辑"}
                       </DropdownMenuItem>
+                      )}
+                      {hasPermission("contract:add") && (
                       <DropdownMenuItem
                         className="gap-2"
                         onClick={() => handleCopy(t.id)}
@@ -318,6 +327,8 @@ export default function ContractTemplatePage() {
                         {actionId === t.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
                         复制
                       </DropdownMenuItem>
+                      )}
+                      {hasPermission("contract:edit") && (
                       <DropdownMenuItem
                         className="gap-2 text-destructive"
                         onClick={() => handleDelete(t.id)}
@@ -326,6 +337,7 @@ export default function ContractTemplatePage() {
                         {actionId === t.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                         删除
                       </DropdownMenuItem>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>

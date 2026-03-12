@@ -42,6 +42,7 @@ import {
   AlertCircle,
 } from "lucide-react"
 import { api } from "@/lib/api"
+import { usePermissions } from "@/lib/permissions"
 import { HomeButton } from "@/components/pc/home-button"
 
 interface PersonItem {
@@ -67,6 +68,7 @@ interface ContractStatusItem {
 }
 
 export default function ContractInitiatePage() {
+  const { hasPermission } = usePermissions()
   const [selectedPersonnel, setSelectedPersonnel] = useState<number[]>([])
   const [isInitiateOpen, setIsInitiateOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
@@ -252,6 +254,7 @@ export default function ContractInitiatePage() {
                   <CardTitle>待签约人员列表</CardTitle>
                   <CardDescription>选择人员批量发起签约</CardDescription>
                 </div>
+                {hasPermission("contract:add") && (
                 <Button
                   className="gap-2"
                   disabled={selectedPersonnel.length === 0}
@@ -260,6 +263,7 @@ export default function ContractInitiatePage() {
                   <Send className="h-4 w-4" />
                   发起签约 ({selectedPersonnel.length})
                 </Button>
+                )}
               </div>
             </CardHeader>
             <CardContent>

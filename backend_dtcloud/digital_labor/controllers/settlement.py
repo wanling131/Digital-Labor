@@ -43,12 +43,11 @@ def confirm_list(request: Request):
     q = dict(request.query_params)
     status = q.get("status")
     pg = parse_pagination(q)
-    where = []
-    params: Dict[str, Any] = {"limit": pg.limit, "offset": pg.offset}
-    if status:
-        where.append("s.status = :status")
-        params["status"] = status
-    return ok(svc_confirm_list(status=status, limit=pg.limit, offset=pg.offset))
+    u = get_user(request) or {}
+    actor_org_id = None
+    if u.get("role") != "admin" and u.get("orgId") is not None:
+        actor_org_id = int(u["orgId"])
+    return ok(svc_confirm_list(status=status, limit=pg.limit, offset=pg.offset, actor_org_id=actor_org_id))
 
 
 class GenerateBody(BaseModel):
@@ -111,20 +110,10 @@ def slip(request: Request, settlement_id: int):
 @router.get("/salary")
 def salary(request: Request):
     q = dict(request.query_params)
-    person_id = q.get("person_id")
-    org_id = q.get("org_id")
-    month = q.get("month")
     pg = parse_pagination(q, default_page_size=50, max_page_size=100)
-    where = []
-    params: Dict[str, Any] = {"limit": pg.limit, "offset": pg.offset}
-    if person_id:
-        where.append("s.person_id = :pid")
-        params["pid"] = int(person_id)
-    if org_id:
-        where.append("p.org_id = :oid")
-        params["oid"] = int(org_id)
-    if month:
-        where.append("CAST(s.period_start AS TEXT) LIKE :m")
-        params["m"] = f"{month}%"
-    return ok(svc_salary_list(filters=q, limit=pg.limit, offset=pg.offset))
+    u = get_user(request) or {}
+    actor_org_id = None
+    if u.get("role") != "admin" and u.get("orgId") is not None:
+        actor_org_id = int(u["orgId"])
+    return ok(svc_salary_list(filters=q, limit=pg.limit, offset=pg.offset, actor_org_id=actor_org_id))
 

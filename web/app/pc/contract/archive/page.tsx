@@ -40,6 +40,7 @@ import {
   Building2,
 } from "lucide-react"
 import { api, downloadContractPdf } from "@/lib/api"
+import { usePermissions } from "@/lib/permissions"
 
 interface ContractArchiveItem {
   id: number
@@ -58,6 +59,7 @@ const statusLabels: Record<string, { label: string; color: string }> = {
 }
 
 export default function ContractArchivePage() {
+  const { hasPermission } = usePermissions()
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedProject, setSelectedProject] = useState("all")
   const [list, setList] = useState<ContractArchiveItem[]>([])
@@ -248,7 +250,7 @@ export default function ContractArchivePage() {
                           <Download className="h-4 w-4" />
                           下载PDF
                         </DropdownMenuItem>
-                        {contract.status === "已签署" && (
+                        {contract.status === "已签署" && hasPermission("contract:edit") && (
                           <DropdownMenuItem
                             className="gap-2 text-destructive"
                             onClick={async () => {
