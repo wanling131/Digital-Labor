@@ -17,6 +17,7 @@ const PERMISSION_LABELS: Record<string, string> = {
   'person:add': '新增人员',
   'person:edit': '编辑人员',
   'person:delete': '删除人员',
+  'person:export': '导出人员',
   'person:import': '批量导入',
   'person:batch_status': '批量状态变更',
   'contract:view': '查看合同',

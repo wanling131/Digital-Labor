@@ -1,11 +1,40 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import time
 from typing import Any, Dict, List, Optional, Set, Union
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
+from digital_labor.auth.passwords import hash_password, is_bcrypt_hash, verify_password
 from digital_labor.db import get_engine
+
+
+# 简单 TTL 缓存（进程内），用于热点接口减压；可在后续替换为 Redis
+_CACHE_TTL_SECONDS = 60
+_cache: Dict[str, tuple[float, Any]] = {}
+
+
+def _cache_get(key: str) -> Any | None:
+    v = _cache.get(key)
+    if not v:
+        return None
+    exp, data = v
+    if exp < time.time():
+        _cache.pop(key, None)
+        return None
+    return data
+
+
+def _cache_set(key: str, data: Any, ttl: int = _CACHE_TTL_SECONDS) -> None:
+    _cache[key] = (time.time() + ttl, data)
+
+
+def _cache_invalidate_prefix(prefix: str) -> None:
+    for k in list(_cache.keys()):
+        if k.startswith(prefix):
+            _cache.pop(k, None)
 
 
 # 菜单与权限常量保持与现有 FastAPI controller 一致
@@ -60,6 +89,7 @@ FULL_MENUS: List[Dict[str, Any]] = [
         "children": [
             {"path": "/pc/system/users", "label": "用户管理"},
             {"path": "/pc/system/organization", "label": "组织管理"},
+            {"path": "/pc/system/job-title", "label": "工种配置"},
             {"path": "/pc/system/permissions", "label": "权限分配"},
             {"path": "/pc/system/logs", "label": "操作日志"},
         ],
@@ -187,7 +217,7 @@ def user_create(body: Dict[str, Any]) -> Union[str, int]:
         with engine.begin() as conn:
             params = {
                 "u": body["username"],
-                "p": body["password"],
+                "p": hash_password(body["password"]),
                 "n": body.get("name"),
                 "o": body.get("org_id"),
                 "r": body.get("role") or "admin",
@@ -209,10 +239,8 @@ def user_create(body: Dict[str, Any]) -> Union[str, int]:
                     ),
                     params,
                 ).mappings().first()
-    except Exception as e:  # noqa: BLE001
-        if "unique" in str(e).lower():
-            return "duplicate"
-        raise
+    except IntegrityError:
+        return "duplicate"
     return int(r["id"])
 
 
@@ -233,7 +261,7 @@ def user_update(user_id: int, patch: Dict[str, Any]) -> None:
         params["enabled"] = 1 if patch.get("enabled") else 0
     if "password" in patch and patch.get("password"):
         updates.append("password_hash = :password")
-        params["password"] = patch.get("password")
+        params["password"] = hash_password(patch["password"])
     if not updates:
         raise ValueError("无有效字段")
     engine = get_engine()
@@ -251,6 +279,28 @@ def seed_role_menu_if_empty() -> None:
             conn.execute(text("INSERT INTO role_menu (role_code, menu_path) VALUES ('admin', :p) ON CONFLICT DO NOTHING"), {"p": p})
         for p in [p for p in ALL_PATHS if p not in USER_HIDDEN_PATHS]:
             conn.execute(text("INSERT INTO role_menu (role_code, menu_path) VALUES ('user', :p) ON CONFLICT DO NOTHING"), {"p": p})
+
+
+def seed_role_permission_if_empty() -> None:
+    engine = get_engine()
+    with engine.connect() as conn:
+        n = conn.execute(text("SELECT COUNT(*) FROM role_permission")).scalar_one()
+        if int(n) > 0:
+            return
+    default_user_perms = [
+        "person:view", "person:add", "person:edit", "person:import", "person:batch_status",
+        "contract:view", "contract:add", "contract:edit",
+        "settlement:view", "settlement:generate", "settlement:confirm",
+        "attendance:view", "attendance:import", "attendance:log",
+        "site:view", "site:edit", "data:view", "system:org",
+    ]
+    engine = get_engine()
+    try:
+        with engine.begin() as conn:
+            for k in default_user_perms:
+                conn.execute(text("INSERT INTO role_permission (role_code, permission_key) VALUES ('user', :k)"), {"k": k})
+    except Exception:  # noqa: BLE001  # unique violation if already seeded
+        pass
 
 
 def my_menu(user_id: int) -> dict:
@@ -373,6 +423,7 @@ def role_permissions_save(code: str, keys: List[str]) -> dict:
         conn.execute(text("DELETE FROM role_permission WHERE role_code = :c"), {"c": code})
         for k in to_insert:
             conn.execute(text("INSERT INTO role_permission (role_code, permission_key) VALUES (:c, :k)"), {"c": code, "k": k})
+    _cache_invalidate_prefix("my_permissions:")
     return {"ok": True, "count": len(to_insert)}
 
 
@@ -390,15 +441,23 @@ def all_permissions() -> dict:
 
 
 def my_permissions(user_id: int) -> dict:
+    cached = _cache_get(f"my_permissions:{user_id}")
+    if cached is not None:
+        return cached
+    seed_role_permission_if_empty()
     engine = get_engine()
     with engine.connect() as conn:
         row = conn.execute(text('SELECT role, org_id FROM "user" WHERE id = :id AND enabled = 1'), {"id": user_id}).mappings().first()
         role = (row or {}).get("role") or "user"
         org_id = (row or {}).get("org_id")
         if role == "admin":
-            return {"permissions": ALL_PERMISSION_KEYS, "org_id": org_id, "role": role}
+            data = {"permissions": ALL_PERMISSION_KEYS, "org_id": org_id, "role": role}
+            _cache_set(f"my_permissions:{user_id}", data)
+            return data
         perms = conn.execute(text("SELECT permission_key FROM role_permission WHERE role_code = :r"), {"r": role}).mappings().all()
-    return {"permissions": [p["permission_key"] for p in perms], "org_id": org_id, "role": role}
+    data = {"permissions": [p["permission_key"] for p in perms], "org_id": org_id, "role": role}
+    _cache_set(f"my_permissions:{user_id}", data)
+    return data
 
 
 def op_log_list(limit: int, offset: int) -> dict:
@@ -448,7 +507,7 @@ def profile_update(user_id: int, patch: Dict[str, Any]) -> None:
 
 def change_password(user_id: int, old_password: str, new_password: str) -> str:
     """
-    修改当前用户密码（演示环境为明文字段 password_hash）。
+    修改当前用户密码。支持旧明文存储的渐进迁移。
     返回:
       - "ok" 正常修改
       - "bad_old_password" 旧密码不匹配
@@ -465,12 +524,16 @@ def change_password(user_id: int, old_password: str, new_password: str) -> str:
     if not row:
         return "no_user"
     current = (row or {}).get("password_hash") or ""
-    if str(current) != str(old_password):
-        return "bad_old_password"
+    if is_bcrypt_hash(current):
+        if not verify_password(old_password, current):
+            return "bad_old_password"
+    else:
+        if str(current) != str(old_password):
+            return "bad_old_password"
     with engine.begin() as conn:
         conn.execute(
             text('UPDATE "user" SET password_hash = :p WHERE id = :id'),
-            {"p": new_password, "id": user_id},
+            {"p": hash_password(new_password), "id": user_id},
         )
     return "ok"
 
@@ -542,7 +605,7 @@ def import_users_from_excel(data: bytes) -> UserImportResult:
                         VALUES (:u, :p, :n, :o, :r)
                         """
                     ),
-                    {"u": username, "p": password, "n": name, "o": org_id, "r": role_val},
+                    {"u": username, "p": hash_password(password), "n": name, "o": org_id, "r": role_val},
                 )
                 count += 1
             except Exception as e:  # noqa: BLE001
