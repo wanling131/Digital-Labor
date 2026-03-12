@@ -34,7 +34,7 @@ def _dtcloud_request() -> Optional[Any]:
 
     try:
         from dtcloud import http  # type: ignore
-    except Exception:  # noqa: BLE001
+    except (ImportError, ModuleNotFoundError):
         return None
 
     return getattr(http, "request", None)
@@ -59,19 +59,19 @@ def _get_auth_header() -> Optional[str]:
     # werkzeug headers / dict-like
     try:
         return headers.get("Authorization") or headers.get("authorization")
-    except Exception:  # noqa: BLE001
-        try:
-            return headers["Authorization"]
-        except Exception:  # noqa: BLE001
-            return None
+    except (AttributeError, TypeError, KeyError):
+        return None
 
 
 def get_jwt_payload() -> Optional[Dict[str, Any]]:
+    """Parse Bearer token from Authorization header; only accepts 'Bearer <token>' format."""
     auth = _get_auth_header()
     if not auth:
         return None
-    parts = str(auth).split(" ")
-    token = parts[-1] if parts else ""
+    parts = str(auth).strip().split(None, 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+    token = parts[1].strip()
     if not token:
         return None
     r = verify_token(token)
