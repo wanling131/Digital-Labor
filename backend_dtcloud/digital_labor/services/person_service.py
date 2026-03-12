@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import base64
+import io
 import os
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -11,6 +13,25 @@ from sqlalchemy import bindparam, text
 from digital_labor.crypto_compat import encrypt, safe_decrypt_then_mask
 from digital_labor.db import get_engine
 from digital_labor.paths import get_paths
+
+
+_JOB_TITLES_CACHE_TTL_SECONDS = 60
+_job_titles_cache: Dict[str, tuple[float, dict]] = {}
+
+
+def _job_titles_cache_get(key: str) -> Optional[dict]:
+    v = _job_titles_cache.get(key)
+    if not v:
+        return None
+    exp, data = v
+    if exp < time.time():
+        _job_titles_cache.pop(key, None)
+        return None
+    return data
+
+
+def _job_titles_cache_set(key: str, data: dict, ttl: int = _JOB_TITLES_CACHE_TTL_SECONDS) -> None:
+    _job_titles_cache[key] = (time.time() + ttl, data)
 
 
 @dataclass(frozen=True)
@@ -50,9 +71,12 @@ def archive_list(
     *,
     filters: Dict[str, Any],
     page: Page,
+    actor_org_id: Optional[int] = None,
 ) -> dict:
     status = filters.get("status")
     org_id = filters.get("org_id")
+    if actor_org_id is not None:
+        org_id = actor_org_id
     on_site = filters.get("on_site")
     filled = filters.get("filled")
     contract_signed = filters.get("contract_signed")
@@ -135,9 +159,30 @@ def archive_get(person_id: int) -> Optional[dict]:
     return dict(row) if row else None
 
 
-def archive_create(body: Dict[str, Any]) -> int:
-    if not body.get("name"):
+def _validate_person_fields(body: Dict[str, Any], for_create: bool = True) -> None:
+    """校验人员档案字段，防止无效或超长输入。"""
+    if for_create and not (body.get("name") or "").strip():
         raise ValueError("姓名必填")
+    if "name" in body:
+        name = (body.get("name") or "").strip()
+        if name and len(name) > 100:
+            raise ValueError("姓名长度不能超过100字符")
+    if "work_no" in body:
+        work_no = (body.get("work_no") or "").strip()
+        if work_no and len(work_no) > 50:
+            raise ValueError("工号长度不能超过50字符")
+    if "id_card" in body and body.get("id_card"):
+        id_card = str(body["id_card"]).strip()
+        if id_card and (len(id_card) < 15 or len(id_card) > 18):
+            raise ValueError("身份证号长度应为15或18位")
+    if "mobile" in body and body.get("mobile"):
+        mobile = str(body["mobile"]).strip()
+        if mobile and (len(mobile) != 11 or not mobile.isdigit()):
+            raise ValueError("手机号应为11位数字")
+
+
+def archive_create(body: Dict[str, Any]) -> int:
+    _validate_person_fields(body, for_create=True)
     engine = get_engine()
     with engine.begin() as conn:
         params = {
@@ -175,6 +220,7 @@ def archive_create(body: Dict[str, Any]) -> int:
 
 
 def archive_update(person_id: int, patch: Dict[str, Any]) -> bool:
+    _validate_person_fields(patch, for_create=False)
     engine = get_engine()
     with engine.connect() as conn:
         exists = conn.execute(text("SELECT 1 FROM person WHERE id = :id"), {"id": person_id}).first()
@@ -240,6 +286,134 @@ def me_activation(worker_id: int, patch: Dict[str, Any]) -> None:
         conn.execute(text(f"UPDATE person SET {', '.join(updates)} WHERE id = :id"), params)
 
 
+def batch_import_from_excel(data: bytes, *, default_job_title: Optional[str] = None) -> dict:
+    """批量导入人员，Excel 格式同 Node 端。工种为空时使用 default_job_title。"""
+    try:
+        import openpyxl  # type: ignore
+    except Exception:  # noqa: BLE001
+        raise RuntimeError("缺少依赖 openpyxl，无法解析 Excel")
+
+    wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True)
+    ws = wb.worksheets[0]
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        return {"imported": 0, "total": 0, "errors": []}
+
+    header = [str(h or "").strip() for h in rows[0]]
+
+    def find_idx(*patterns: str) -> int:
+        for i, h in enumerate(header):
+            for p in patterns:
+                if p.lower() in (h or "").lower():
+                    return i
+        return -1
+
+    name_idx = find_idx("name", "姓名")
+    work_no_idx = find_idx("work_no", "工号")
+    id_card_idx = find_idx("id_card", "身份证号", "身份证")
+    mobile_idx = find_idx("mobile", "手机号", "电话")
+    org_idx = find_idx("org_id", "组织id", "所属组织")
+    status_idx = find_idx("status", "状态")
+    job_idx = find_idx("job_title", "工种", "job_type")
+
+    if name_idx < 0:
+        raise ValueError("Excel 需包含「姓名」列")
+
+    mobile_re = re.compile(r"^1[3-9]\d{9}$")
+    id_card_re = re.compile(r"^[1-9]\d{5}(18|19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{3}[0-9Xx]$")
+
+    errors: List[dict] = []
+    valid: List[Dict[str, Any]] = []
+
+    for i in range(1, len(rows)):
+        r = rows[i]
+        row_errors: List[str] = []
+        name = str(r[name_idx] or "").strip() if name_idx >= 0 and r[name_idx] is not None else ""
+        if not name:
+            row_errors.append("姓名不能为空")
+
+        mobile = ""
+        if mobile_idx >= 0 and r[mobile_idx] is not None:
+            mobile = str(r[mobile_idx]).strip()
+        if mobile and not mobile_re.match(mobile):
+            row_errors.append("手机号格式不正确")
+
+        id_card = ""
+        if id_card_idx >= 0 and r[id_card_idx] is not None:
+            id_card = str(r[id_card_idx]).strip()
+        if id_card and not id_card_re.match(id_card):
+            row_errors.append("身份证号格式不正确")
+
+        if row_errors:
+            errors.append({"row": i + 2, "errors": row_errors})
+            continue
+
+        work_no = str(r[work_no_idx]).strip() if work_no_idx >= 0 and r[work_no_idx] is not None else None
+        work_no = work_no or None
+        org_id = None
+        if org_idx >= 0 and r[org_idx] is not None:
+            try:
+                org_id = int(str(r[org_idx]).strip())
+            except Exception:  # noqa: BLE001
+                pass
+        status = str(r[status_idx]).strip() if status_idx >= 0 and r[status_idx] is not None else "预注册"
+        status = status or "预注册"
+        job_title = str(r[job_idx]).strip() if job_idx >= 0 and r[job_idx] is not None else ""
+        job_title = job_title or default_job_title or None
+
+        valid.append({
+            "org_id": org_id,
+            "work_no": work_no,
+            "name": name,
+            "id_card": id_card or None,
+            "mobile": mobile or None,
+            "bank_card": None,
+            "status": status,
+            "job_title": job_title,
+        })
+
+    if errors:
+        return {"imported": 0, "total": len(rows) - 1, "errors": errors}
+
+    engine = get_engine()
+    count = 0
+    with engine.begin() as conn:
+        for item in valid:
+            params = {
+                "org_id": item["org_id"],
+                "work_no": item["work_no"],
+                "name": item["name"],
+                "id_card": encrypt(item["id_card"]) if item.get("id_card") else None,
+                "mobile": encrypt(item["mobile"]) if item.get("mobile") else None,
+                "bank_card": item.get("bank_card"),
+                "status": item.get("status") or "预注册",
+                "job_title": item.get("job_title"),
+            }
+            if engine.dialect.name == "sqlite":
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO person (org_id, work_no, name, id_card, mobile, bank_card, status, job_title, updated_at)
+                        VALUES (:org_id, :work_no, :name, :id_card, :mobile, :bank_card, :status, :job_title, CURRENT_TIMESTAMP)
+                        """
+                    ),
+                    params,
+                )
+            else:
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO person (org_id, work_no, name, id_card, mobile, bank_card, status, job_title, updated_at)
+                        VALUES (:org_id, :work_no, :name, :id_card, :mobile, :bank_card, :status, :job_title, CURRENT_TIMESTAMP)
+                        """
+                    ),
+                    params,
+                )
+            count += 1
+
+    return {"imported": count, "total": len(rows) - 1, "errors": errors}
+
+
 def archive_delete(person_id: int) -> bool:
     engine = get_engine()
     with engine.connect() as conn:
@@ -275,13 +449,68 @@ def status_batch(ids: List[int], status: str) -> None:
             )
 
 
-def job_titles() -> dict:
+def job_titles(*, flat: bool = False) -> dict:
+    """
+    返回工种列表。优先从 job_title_config 获取（支持层级），若无配置则从 person 表 DISTINCT。
+    flat=1 时返回扁平列表供选择器使用。
+    """
+    cache_key = f"job_titles:flat={1 if flat else 0}"
+    cached = _job_titles_cache_get(cache_key)
+    if cached is not None:
+        return cached
     engine = get_engine()
+    try:
+        with engine.connect() as conn:
+            config_rows = conn.execute(
+                text("SELECT id, code, name, parent_id, sort FROM job_title_config ORDER BY sort, id")
+            ).mappings().all()
+            if config_rows:
+                # 构建树形结构
+                by_id: Dict[int, Dict[str, Any]] = {int(r["id"]): dict(r) for r in config_rows}
+                for r in by_id.values():
+                    r["children"] = []
+                roots: List[Dict[str, Any]] = []
+                flat_names: List[str] = []
+                for r in config_rows:
+                    rid = int(r["id"])
+                    parent_id = r.get("parent_id")
+                    node = {**by_id[rid], "children": []}
+                    flat_names.append(str(r["name"]))
+                    if parent_id is None:
+                        roots.append(node)
+                    else:
+                        pid = int(parent_id)
+                        if pid in by_id and "children" in by_id[pid]:
+                            by_id[pid]["children"].append(node)
+                        else:
+                            roots.append(node)
+                # 递归收集叶子节点名称到 flat（用于选择）
+                def collect_leaves(nodes: List[Dict]) -> List[str]:
+                    out: List[str] = []
+                    for n in nodes:
+                        kids = n.get("children") or []
+                        if not kids:
+                            out.append(str(n.get("name", "")))
+                        else:
+                            out.extend(collect_leaves(kids))
+                    return out
+
+                flat_list = collect_leaves(roots) if roots else flat_names
+                data = {"list": roots, "flat": flat_list}
+                _job_titles_cache_set(cache_key, data)
+                return data
+    except Exception:  # noqa: BLE001
+        pass
+
+    # 回退：从 person 表获取
     with engine.connect() as conn:
         rows = conn.execute(
             text("SELECT DISTINCT job_title FROM person WHERE TRIM(COALESCE(job_title,'')) != '' ORDER BY job_title")
         ).mappings().all()
-    return {"list": [r["job_title"] for r in rows]}
+    flat_list = [r["job_title"] for r in rows]
+    data = {"list": flat_list, "flat": flat_list}
+    _job_titles_cache_set(cache_key, data)
+    return data
 
 
 def face_verify_mark_passed(person_id: Optional[int]) -> None:
