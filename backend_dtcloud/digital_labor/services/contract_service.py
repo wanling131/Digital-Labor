@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import time
@@ -9,6 +10,39 @@ from sqlalchemy import text
 
 from digital_labor.db import get_engine
 from digital_labor.paths import get_paths
+
+logger = logging.getLogger(__name__)
+
+
+def _overlay_signature_on_pdf(template_pdf_path: str, signature_img_path: str, output_pdf_path: str) -> bool:
+    """将签名图片叠加到模板 PDF 最后一页右下角，输出到 output_pdf_path。"""
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        logger.warning("PyMuPDF 未安装，跳过合同 PDF 生成")
+        return False
+    if not os.path.exists(template_pdf_path) or not os.path.exists(signature_img_path):
+        return False
+    try:
+        doc = fitz.open(template_pdf_path)
+        if doc.page_count == 0:
+            doc.close()
+            return False
+        page = doc[-1]
+        rect = page.rect
+        img_width = 120
+        img_height = 60
+        x0 = rect.width - img_width - 50
+        y0 = rect.height - img_height - 80
+        img_rect = fitz.Rect(x0, y0, x0 + img_width, y0 + img_height)
+        page.insert_image(img_rect, filename=signature_img_path)
+        os.makedirs(os.path.dirname(output_pdf_path), exist_ok=True)
+        doc.save(output_pdf_path)
+        doc.close()
+        return True
+    except Exception as e:
+        logger.warning("合同 PDF 叠加签名失败: %s", e)
+        return False
 
 
 def template_list() -> dict:
@@ -188,7 +222,12 @@ def template_render(template_id: int, data: Dict[str, Any]) -> Optional[dict]:
     return {"content": rendered}
 
 
+MAX_TEMPLATE_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB
+
+
 def template_upload_save(*, filename: str, content: bytes, name: Optional[str]) -> int:
+    if len(content) > MAX_TEMPLATE_UPLOAD_BYTES:
+        raise ValueError(f"文件大小超过限制（最大 {MAX_TEMPLATE_UPLOAD_BYTES // (1024*1024)}MB）")
     paths = get_paths()
     os.makedirs(paths.uploads_templates, exist_ok=True)
     safe_name = (filename or "file").replace("/", "_").replace("\\", "_")
@@ -357,6 +396,7 @@ def sign(*, contract_id: int, person_id: int) -> str:
         return "forbidden"
 
     paths = get_paths()
+    sig_snapshot_abs: Optional[str] = None
     with engine.begin() as conn:
         conn.execute(
             text("UPDATE contract_instance SET status='已签署', signed_at=CURRENT_TIMESTAMP WHERE id=:id"),
@@ -374,8 +414,21 @@ def sign(*, contract_id: int, person_id: int) -> str:
                     shutil.copyfile(src_abs, dst_abs)
                     rel = os.path.relpath(dst_abs, paths.server_root).replace("\\", "/")
                     conn.execute(text("UPDATE contract_instance SET sign_image_snapshot=:p WHERE id=:id"), {"p": rel, "id": contract_id})
-        except Exception:
-            pass
+                    sig_snapshot_abs = dst_abs
+        except (OSError, shutil.Error) as e:
+            logger.warning("签名图片复制失败 contract_id=%s person_id=%s: %s", contract_id, row.get("person_id"), e)
+
+    if sig_snapshot_abs:
+        template_id = row.get("template_id")
+        if template_id:
+            tpl_path = template_file_path(template_id)
+            if tpl_path:
+                os.makedirs(paths.uploads_contracts, exist_ok=True)
+                out_pdf = os.path.join(paths.uploads_contracts, f"contract_{contract_id}.pdf")
+                if _overlay_signature_on_pdf(tpl_path, sig_snapshot_abs, out_pdf):
+                    pdf_rel = os.path.relpath(out_pdf, paths.server_root).replace("\\", "/")
+                    with engine.begin() as conn:
+                        conn.execute(text("UPDATE contract_instance SET pdf_path=:p WHERE id=:id"), {"p": pdf_rel, "id": contract_id})
     return "ok"
 
 

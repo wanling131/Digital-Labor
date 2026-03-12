@@ -1,8 +1,14 @@
 /**
  * 后端 API 请求封装（管理端）
  * 开发时通过 next.config 的 rewrites 将 /api 代理到 http://localhost:3000
- * 生产环境需配置同源或 NEXT_PUBLIC_API_BASE
+ * 生产环境需配置 NEXT_PUBLIC_API_BASE 环境变量，确保 API 指向正确
+ *
+ * 令牌存储：支持两种模式
+ * - localStorage（默认）：NEXT_PUBLIC_USE_COOKIE_AUTH 未设置时
+ * - httpOnly cookie：NEXT_PUBLIC_USE_COOKIE_AUTH=true 且后端 USE_HTTPONLY_COOKIE=true 时
  */
+
+const USE_COOKIE_AUTH = process.env.NEXT_PUBLIC_USE_COOKIE_AUTH === "true"
 
 // 在浏览器端使用相对路径（交给 next.config rewrites 代理），在服务端默认走环境变量或本地 3000
 const API_BASE =
@@ -11,6 +17,11 @@ const API_BASE =
     : ''
 const TOKEN_KEY = 'labor_token'
 const WORKER_TOKEN_KEY = 'labor_worker_token'
+
+/** P2 系统嵌入：租户 ID，通过 NEXT_PUBLIC_TENANT_ID 注入 */
+export function getTenantId(): string | null {
+  return process.env.NEXT_PUBLIC_TENANT_ID ?? null
+}
 
 export function getToken(): string | null {
   if (typeof window === 'undefined') return null
@@ -35,10 +46,17 @@ export function setWorkerToken(token: string | null): void {
   else localStorage.removeItem(WORKER_TOKEN_KEY)
 }
 
-export async function api<T = unknown>(
-  path: string,
-  options: Omit<RequestInit, 'body'> & { body?: object | FormData; query?: Record<string, string | number> } = {}
-): Promise<T> {
+type ApiOptions = Omit<RequestInit, 'body'> & { body?: object | FormData; query?: Record<string, string | number> }
+
+type TokenConfig = {
+  getToken: () => string | null
+  setToken: (t: string | null) => void
+  loginRedirect: string
+  unauthMessage: string
+}
+
+/** 内部通用请求逻辑，减少 api 与 apiWorker 的重复代码 */
+async function requestWithToken<T>(path: string, options: ApiOptions, config: TokenConfig): Promise<T> {
   const { body, query, ...rest } = options
   let url = path.startsWith('http') ? path : `${API_BASE}${path.startsWith('/') ? '' : '/'}${path}`
   if (query && Object.keys(query).length > 0) {
@@ -46,33 +64,38 @@ export async function api<T = unknown>(
     Object.entries(query).forEach(([k, v]) => qs.set(k, String(v)))
     url += (url.includes('?') ? '&' : '?') + qs.toString()
   }
-  const headers: HeadersInit = {
-    ...(rest.headers as HeadersInit),
-  }
+  const headers: HeadersInit = { ...(rest.headers as HeadersInit) }
   if (!(body instanceof FormData)) (headers as Record<string, string>)['Content-Type'] = 'application/json'
-  const token = getToken()
+  const token = USE_COOKIE_AUTH ? null : config.getToken()
   if (token) (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`
 
   const res = await fetch(url, {
     ...rest,
     headers,
+    credentials: USE_COOKIE_AUTH ? 'include' : 'same-origin',
     body: body != null ? (body instanceof FormData ? body : JSON.stringify(body)) : undefined,
   })
 
-  // 处理Token刷新
   const newToken = res.headers.get('X-Token-Refresh')
-  if (newToken) {
-    setToken(newToken)
-  }
+  if (newToken) config.setToken(newToken)
 
   const data = await res.json().catch(() => ({}))
   if (res.status === 401) {
-    setToken(null)
-    if (typeof window !== 'undefined') window.location.href = '/login'
-    throw new Error((data as { message?: string }).message ?? '未登录')
+    config.setToken(null)
+    if (typeof window !== 'undefined') window.location.href = config.loginRedirect
+    throw new Error((data as { message?: string }).message ?? config.unauthMessage)
   }
   if (!res.ok) throw new Error((data as { message?: string }).message ?? res.statusText)
   return data as T
+}
+
+export async function api<T = unknown>(path: string, options: ApiOptions = {}): Promise<T> {
+  return requestWithToken<T>(path, options, {
+    getToken,
+    setToken,
+    loginRedirect: '/login',
+    unauthMessage: '未登录',
+  })
 }
 
 /** 构造后端静态文件访问 URL（如签名图片），优先使用 NEXT_PUBLIC_API_BASE */
@@ -87,49 +110,23 @@ export function buildFileUrl(relativePath: string | null | undefined): string {
 }
 
 /** 工人端 API（H5）：使用 labor_worker_token，401 时跳转 /h5/login */
-export async function apiWorker<T = unknown>(
-  path: string,
-  options: Omit<RequestInit, 'body'> & { body?: object | FormData; query?: Record<string, string | number> } = {}
-): Promise<T> {
-  const { body, query, ...rest } = options
-  let url = path.startsWith('http') ? path : `${API_BASE}${path.startsWith('/') ? '' : '/'}${path}`
-  if (query && Object.keys(query).length > 0) {
-    const qs = new URLSearchParams()
-    Object.entries(query).forEach(([k, v]) => qs.set(k, String(v)))
-    url += (url.includes('?') ? '&' : '?') + qs.toString()
-  }
-  const headers: HeadersInit = { ...(rest.headers as HeadersInit) }
-  if (!(body instanceof FormData)) (headers as Record<string, string>)['Content-Type'] = 'application/json'
-  const token = getWorkerToken()
-  if (token) (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`
-
-  const res = await fetch(url, {
-    ...rest,
-    headers,
-    body: body != null ? (body instanceof FormData ? body : JSON.stringify(body)) : undefined,
+export async function apiWorker<T = unknown>(path: string, options: ApiOptions = {}): Promise<T> {
+  return requestWithToken<T>(path, options, {
+    getToken: getWorkerToken,
+    setToken: setWorkerToken,
+    loginRedirect: '/h5/login',
+    unauthMessage: '请重新登录',
   })
-
-  // 处理Token刷新
-  const newToken = res.headers.get('X-Token-Refresh')
-  if (newToken) {
-    setWorkerToken(newToken)
-  }
-
-  const data = await res.json().catch(() => ({}))
-  if (res.status === 401) {
-    setWorkerToken(null)
-    if (typeof window !== 'undefined') window.location.href = '/h5/login'
-    throw new Error((data as { message?: string }).message ?? '请重新登录')
-  }
-  if (!res.ok) throw new Error((data as { message?: string }).message ?? res.statusText)
-  return data as T
 }
 
 /** 工人端下载工资条 HTML：GET /api/settlement/:id/slip，带 worker token */
 export async function downloadSettlementSlip(settlementId: string): Promise<{ ok: true } | { ok: false; message: string }> {
   const url = `${API_BASE}/api/settlement/${settlementId}/slip`
-  const token = getWorkerToken()
-  const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+  const token = USE_COOKIE_AUTH ? null : getWorkerToken()
+  const res = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: USE_COOKIE_AUTH ? "include" : "same-origin",
+  })
   if (res.status === 401) {
     setWorkerToken(null)
     if (typeof window !== 'undefined') window.location.href = '/h5/login'
@@ -157,8 +154,11 @@ export async function downloadSettlementSlip(settlementId: string): Promise<{ ok
 export async function downloadContractPdf(contractId: string, useWorkerToken = false): Promise<{ ok: true } | { ok: false; message: string }> {
   const base = API_BASE && !API_BASE.endsWith('/') ? API_BASE : API_BASE
   const url = base ? `${base}/api/contract/${contractId}/pdf` : `/api/contract/${contractId}/pdf`
-  const token = useWorkerToken ? getWorkerToken() : getToken()
-  const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+  const token = USE_COOKIE_AUTH ? null : (useWorkerToken ? getWorkerToken() : getToken())
+  const res = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: USE_COOKIE_AUTH ? "include" : "same-origin",
+  })
   if (res.status === 404) {
     const data = await res.json().catch(() => ({}))
     return { ok: false, message: (data as { noFile?: boolean; message?: string }).noFile ? '暂无 PDF 文件，对接电子签后可下载' : (data as { message?: string }).message ?? '合同不存在' }

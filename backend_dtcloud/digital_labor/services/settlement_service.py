@@ -31,16 +31,19 @@ def my_all(person_id: int) -> dict:
     return {"list": [dict(r) for r in rows]}
 
 
-def confirm_list(*, status: Optional[str], limit: int, offset: int) -> dict:
+def confirm_list(*, status: Optional[str], limit: int, offset: int, actor_org_id: Optional[int] = None) -> dict:
     where = []
     params: Dict[str, Any] = {"limit": limit, "offset": offset}
     if status:
         where.append("s.status = :status")
         params["status"] = status
+    if actor_org_id is not None:
+        where.append("p.org_id = :oid")
+        params["oid"] = actor_org_id
     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
     engine = get_engine()
     with engine.connect() as conn:
-        total = conn.execute(text(f"SELECT COUNT(*) FROM settlement s{where_sql}"), params).scalar_one()
+        total = conn.execute(text(f"SELECT COUNT(*) FROM settlement s JOIN person p ON s.person_id = p.id{where_sql}"), params).scalar_one()
         rows = conn.execute(
             text(
                 f"""
@@ -200,6 +203,8 @@ def push_notify(ids: Optional[List[int]]) -> dict:
 
 
 def slip_html(*, settlement_id: int, actor: Dict[str, Any]) -> Union[Tuple[str, str], str]:
+    import base64
+
     engine = get_engine()
     with engine.connect() as conn:
         s = conn.execute(
@@ -216,6 +221,22 @@ def slip_html(*, settlement_id: int, actor: Dict[str, Any]) -> Union[Tuple[str, 
         return "not_found"
     if actor.get("workerId") and int(s["person_id"]) != int(actor["workerId"]):
         return "forbidden"
+
+    sig_html = ""
+    sig_path = (s.get("sign_image_snapshot") or "").strip()
+    if sig_path and not sig_path.startswith("data:image"):
+        from digital_labor.paths import get_paths
+
+        paths = get_paths()
+        abs_path = os.path.abspath(os.path.join(paths.server_root, sig_path))
+        if os.path.exists(abs_path):
+            try:
+                with open(abs_path, "rb") as f:
+                    b64 = base64.b64encode(f.read()).decode("ascii")
+                sig_html = f'<div class="sig" style="margin-top:16px;padding-top:8px;border-top:1px solid #eee;"><p style="font-size:12px;color:#666;">本人签名</p><img src="data:image/png;base64,{b64}" alt="签名" style="max-width:120px;height:auto;" /></div>'
+            except OSError:
+                pass
+
     html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>工资条-{s['period_start']}</title><style>
 body{{font-family:sans-serif;max-width:400px;margin:24px auto;padding:16px;border:1px solid #eee;border-radius:8px;}}
 h3{{margin:0 0 16px;border-bottom:1px solid #eee;padding-bottom:8px;}}
@@ -232,15 +253,18 @@ th,td{{text-align:left;padding:8px 0;border-bottom:1px solid #f0f0f0;}}
   <tr><th>已发金额</th><td>{s.get('amount_paid',0) or 0}</td></tr>
   <tr><th>状态</th><td>{s.get('status','')}</td></tr>
 </table>
+{sig_html}
 <div class="foot">Digital Labor</div>
 </body></html>"""
     filename = f"工资条_{s['period_start']}_{s.get('person_name') or s['id']}.html"
     return html, filename
 
 
-def salary_list(*, filters: Dict[str, Any], limit: int, offset: int) -> dict:
+def salary_list(*, filters: Dict[str, Any], limit: int, offset: int, actor_org_id: Optional[int] = None) -> dict:
     person_id = filters.get("person_id")
     org_id = filters.get("org_id")
+    if actor_org_id is not None:
+        org_id = actor_org_id
     month = filters.get("month")
     where = []
     params: Dict[str, Any] = {"limit": limit, "offset": offset}

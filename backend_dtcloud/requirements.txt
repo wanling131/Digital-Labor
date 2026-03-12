@@ -1,10 +1,12 @@
 dtcloud @ git+https://gitee.com/dtcloud360/dtcloud.git@DTCloud-4.19
+bcrypt>=4.0.0
 python-dotenv>=1.0.0
 PyJWT>=2.8.0
 psycopg[binary]>=3.1.18
 SQLAlchemy>=2.0.25
 cryptography>=42.0.0
 openpyxl>=3.1.2
+pymupdf>=1.24.0
 xlrd>=2.0.1
 requests>=2.31.0
 
