@@ -20,7 +20,7 @@ export default function ProfileHelpPage() {
   }, [router])
 
   return (
-    <div className="pb-24 min-h-screen">
+    <div className="flex-1 min-h-0 overflow-auto pb-24">
       <PageHeader title="帮助与反馈" backHref="/h5/profile" />
 
       <div className="px-4 pt-4">

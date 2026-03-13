@@ -128,7 +128,7 @@ export default function ProfilePage() {
   }, [])
 
   return (
-    <PullRefresh onRefresh={handleRefresh} className="pb-24 min-h-screen">
+    <PullRefresh onRefresh={handleRefresh} className="pb-24 flex-1 min-h-0">
       {/* Header */}
       <div className="bg-gradient-to-br from-primary to-primary/90 px-4 pt-12 pb-20 text-primary-foreground">
         <div className="flex items-center justify-between mb-6">

@@ -43,17 +43,13 @@ import {
   Download,
   Upload,
   Filter,
-  Eye,
   Edit,
   Trash2,
   UserCheck,
   FileText,
   Building2,
-  FileUp,
   AlertCircle,
   CheckCircle2,
-  X,
-  Award,
   Loader2,
 } from "lucide-react"
 import { api, getToken } from "@/lib/api"
@@ -182,8 +178,6 @@ export default function PersonnelArchivePage() {
     loadStatus()
     loadJobTitles()
   }, [loadOrg, loadStatus, loadJobTitles])
-
-  const filteredBySearch = list
 
   const totalCount = statusCounts.reduce((s, r) => s + r.count, 0)
   const realNameCount = statusCounts.filter((r) => r.status !== "预注册").reduce((s, r) => s + r.count, 0)
@@ -354,6 +348,16 @@ export default function PersonnelArchivePage() {
     }
   }
 
+  const hasActiveFilters = selectedStatus !== "all" || selectedOrgId !== "all" || selectedJobTitle !== "all" || searchTerm.trim().length > 0
+
+  const handleResetFilters = () => {
+    setSelectedStatus("all")
+    setSelectedOrgId("all")
+    setSelectedJobTitle("all")
+    setSearchTerm("")
+    setPage(1)
+  }
+
   return (
     <div className="space-y-6">
         <div className="flex items-center justify-between">
@@ -366,6 +370,7 @@ export default function PersonnelArchivePage() {
           </div>
           <div className="flex items-center gap-2">
           {hasPermission("person:import") && (
+          <>
           <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" className="gap-2">
@@ -594,6 +599,7 @@ export default function PersonnelArchivePage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          </>
           )}
         </div>
       </div>
@@ -708,9 +714,23 @@ export default function PersonnelArchivePage() {
                   ))}
                 </SelectContent>
               </Select>
-              <Button variant="outline" size="icon">
-                <Filter className="h-4 w-4" />
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon" title="筛选">
+                    <Filter className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={handleResetFilters}
+                    disabled={!hasActiveFilters}
+                    className="gap-2"
+                  >
+                    <Filter className="h-4 w-4" />
+                    {hasActiveFilters ? "清除筛选" : "暂无筛选"}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
             <p className="text-sm text-muted-foreground">
               共 <span className="font-medium text-foreground">{total}</span> 条记录
@@ -741,14 +761,14 @@ export default function PersonnelArchivePage() {
                     加载中...
                   </TableCell>
                 </TableRow>
-              ) : filteredBySearch.length === 0 ? (
+              ) : list.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                     暂无数据
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredBySearch.map((person) => (
+                list.map((person) => (
                   <TableRow key={person.id}>
                     <TableCell className="font-medium align-middle">{person.work_no ?? "—"}</TableCell>
                     <TableCell className="align-middle">{person.name ?? "—"}</TableCell>

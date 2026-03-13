@@ -56,7 +56,7 @@ export function PullRefresh({ children, onRefresh, className }: PullRefreshProps
   return (
     <div
       ref={containerRef}
-      className={cn("relative overflow-auto", className)}
+      className={cn("relative flex-1 min-h-0 overflow-auto", className)}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}

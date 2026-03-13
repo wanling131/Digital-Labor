@@ -31,8 +31,8 @@ export default function H5Layout({
   children: React.ReactNode
 }) {
   return (
-    <div className="min-h-screen bg-background max-w-md mx-auto relative overflow-x-hidden">
-      <div className="animate-in fade-in duration-300">
+    <div className="h-dvh flex flex-col overflow-hidden bg-background max-w-md mx-auto relative">
+      <div className="flex-1 min-h-0 flex flex-col animate-in fade-in duration-300">
         {children}
       </div>
     </div>

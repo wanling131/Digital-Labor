@@ -20,7 +20,7 @@ export default function ProfileSettingsPage() {
   }, [router])
 
   return (
-    <div className="pb-24 min-h-screen">
+    <div className="flex-1 min-h-0 overflow-auto pb-24">
       <PageHeader title="系统设置" backHref="/h5/profile" />
 
       <div className="px-4 pt-4">

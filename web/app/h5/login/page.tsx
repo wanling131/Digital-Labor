@@ -125,7 +125,8 @@ export default function H5LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary to-primary/90 flex flex-col items-center justify-center p-4 pb-6 max-w-md mx-auto">
+    <div className="flex-1 min-h-0 overflow-auto flex flex-col items-center justify-center p-4 pb-6 bg-gradient-to-br from-primary to-primary/90">
+      <div className="w-full max-w-md mx-auto">
       {/* Logo */}
       <div className="text-center mb-8 mt-8">
         <div className="flex items-center justify-center gap-2 mb-3">
@@ -376,6 +377,7 @@ export default function H5LoginPage() {
           返回首页
         </Button>
       </Link>
+      </div>
     </div>
   )
 }

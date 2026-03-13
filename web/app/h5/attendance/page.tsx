@@ -87,7 +87,7 @@ export default function AttendancePage() {
   }, [loadAttendance])
 
   return (
-    <PullRefresh onRefresh={handleRefresh} className="pb-24 min-h-screen">
+    <PullRefresh onRefresh={handleRefresh} className="pb-24 flex-1 min-h-0">
       {/* Header */}
       <PageHeader title="考勤" backHref="/h5" />
 

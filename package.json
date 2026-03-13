@@ -13,7 +13,7 @@
     "start": "npm run start:api",
     "start:api": "node scripts/run-api.mjs",
     "start:server:legacy": "cd server && npm run start",
-    "install:all": "npm install && cd server && npm install && cd ../web && npm install",
+    "install:all": "npm install && cd server && npm install && cd ../web && npm install && cd ../backend_dtcloud && python -m pip install -r requirements-fastapi.txt",
     "test": "npm run test:server",
     "test:api:blackbox": "node --test test/api.test.mjs && node test/features.test.mjs",
     "test:server": "cd backend_dtcloud && python scripts/compat_check.py --new http://localhost:3000 --new-only",

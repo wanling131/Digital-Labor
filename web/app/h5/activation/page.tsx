@@ -137,7 +137,7 @@ export default function ActivationPage() {
   }
 
   return (
-    <div className="pb-24 min-h-screen bg-background">
+    <div className="flex-1 min-h-0 overflow-auto pb-24 bg-background">
       <PageHeader title="账户激活" backHref="/h5/login" />
 
       {/* 步骤指示器 */}

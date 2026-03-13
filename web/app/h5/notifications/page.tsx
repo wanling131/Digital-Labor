@@ -162,7 +162,7 @@ export default function NotificationsPage() {
   }
 
   return (
-    <div className="pb-20 min-h-screen bg-background">
+    <div className="flex-1 min-h-0 overflow-auto pb-20 bg-background">
       <PageHeader
         title="消息通知"
         rightAction={

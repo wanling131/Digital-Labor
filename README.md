@@ -56,17 +56,15 @@ digital-labor/
 
 ## 快速开始
 
-### 1. 安装依赖（前端 + 根脚本）
+### 1. 安装依赖（根 + 前端 + 后端）
 
 ```bash
 npm run install:all
 ```
 
-（会依次安装根目录、server、web 的依赖；Python 后端依赖见下方。）
+会依次安装：根目录、server（旧后端）、web（前端）、**backend_dtcloud（Python 后端）** 的依赖。
 
-### 1.1 安装后端（Python）依赖
-
-在 `backend_dtcloud/` 下创建虚拟环境并安装依赖：
+如需使用虚拟环境隔离 Python 依赖，可手动创建：
 
 ```bash
 cd backend_dtcloud
