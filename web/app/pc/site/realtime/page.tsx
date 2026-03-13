@@ -58,7 +58,7 @@ const statusConfig = {
 }
 
 export default function RealtimePage() {
-  const [lastUpdate, setLastUpdate] = useState(new Date())
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [board, setBoard] = useState<SiteBoardRes | null>(null)
 
@@ -123,7 +123,7 @@ export default function RealtimePage() {
             实时更新
           </Badge>
           <span className="text-sm text-muted-foreground">
-            最后更新: {lastUpdate.toLocaleTimeString("zh-CN")}
+            最后更新: {lastUpdate ? lastUpdate.toLocaleTimeString("zh-CN") : "--"}
           </span>
           <Button
             variant="outline"

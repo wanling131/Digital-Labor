@@ -42,9 +42,16 @@ interface NotifItem {
   read_at?: string | null
 }
 
+type AttendanceItem = {
+  work_date?: string
+  clock_in?: string
+  clock_out?: string
+  hours?: number
+}
+
 export default function H5HomePage() {
   const router = useRouter()
-  const [currentTime, setCurrentTime] = useState(new Date())
+  const [currentTime, setCurrentTime] = useState<Date | null>(null)
   const [isRefreshing, setRefreshing] = useState(false)
   const [authChecked, setAuthChecked] = useState(false)
   const [notifications, setNotifications] = useState<NotifItem[]>([])
@@ -56,7 +63,13 @@ export default function H5HomePage() {
   const [todayClockIn, setTodayClockIn] = useState<string>("")
   const [todayClockOut, setTodayClockOut] = useState<string>("")
   const [monthStats, setMonthStats] = useState<{ workDays: number; workHours: number; salary: number }>({ workDays: 0, workHours: 0, salary: 0 })
-  const greeting = currentTime.getHours() < 12 ? "上午好" : currentTime.getHours() < 18 ? "下午好" : "晚上好"
+  const greeting = currentTime
+    ? currentTime.getHours() < 12
+      ? "上午好"
+      : currentTime.getHours() < 18
+        ? "下午好"
+        : "晚上好"
+    : "您好"
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -76,7 +89,7 @@ export default function H5HomePage() {
       const [notifRes, meRes, attRes] = await Promise.all([
         apiWorker<{ list: NotifItem[] }>("/api/notify/list", { query: { pageSize: 5 } }),
         apiWorker<{ name?: string; org_name?: string; work_no?: string; job_title?: string; work_address?: string }>("/api/worker/me"),
-        apiWorker<{ list: { work_date?: string; clock_in?: string; clock_out?: string }[] }>("/api/attendance/my", {
+        apiWorker<{ list: AttendanceItem[] }>("/api/attendance/my", {
           query: { year, month },
         }),
       ])
@@ -86,13 +99,17 @@ export default function H5HomePage() {
       setWorkNo(meRes.work_no ?? "")
       setJobTitle(meRes.job_title ?? "")
       setWorkAddress(meRes.work_address ?? "")
+      const attendanceList = (attRes.list || []) as AttendanceItem[]
       const todayStr = now.toISOString().slice(0, 10)
-      const todayRecord = (attRes.list || []).find((a) => a.work_date === todayStr)
+      const todayRecord = attendanceList.find((a) => a.work_date === todayStr)
       setTodayClockIn(todayRecord?.clock_in ?? "")
       setTodayClockOut(todayRecord?.clock_out ?? "")
-      const list = attRes.list || []
-      const workDays = list.filter((a: { clock_in?: string }) => a.clock_in).length
-      const workHours = Math.round(list.reduce((s: number, a: { hours?: number }) => s + (Number(a.hours) || 0), 0) * 10) / 10
+      const workDays = attendanceList.filter((a) => a.clock_in).length
+      const totalHours = attendanceList.reduce<number>(
+        (sum, a) => sum + (typeof a.hours === "number" ? a.hours : 0),
+        0
+      )
+      const workHours = Math.round(totalHours * 10) / 10
       let salary = 0
       try {
         const settleRes = await apiWorker<{ list: { amount_due?: number; amount_paid?: number; period_start?: string }[] }>("/api/settlement/my", { query: { pageSize: 12 } })
@@ -115,6 +132,10 @@ export default function H5HomePage() {
   useEffect(() => {
     if (authChecked) loadData()
   }, [authChecked, loadData])
+
+  useEffect(() => {
+    setCurrentTime(new Date())
+  }, [])
   
   const handleRefresh = useCallback(async () => {
     setRefreshing(true)
@@ -205,7 +226,15 @@ export default function H5HomePage() {
               <h2 className="font-semibold">今日考勤</h2>
               <div className="flex items-center gap-1 text-sm text-muted-foreground">
                 <Calendar className="h-4 w-4" />
-                <span>{currentTime.toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "short" })}</span>
+                <span>
+                  {currentTime
+                    ? currentTime.toLocaleDateString("zh-CN", {
+                        month: "long",
+                        day: "numeric",
+                        weekday: "short",
+                      })
+                    : ""}
+                </span>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">

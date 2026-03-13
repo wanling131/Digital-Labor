@@ -28,7 +28,7 @@ export function ContractEditor({
 }: ContractEditorProps) {
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const tinymceRef = useRef<any>(null);
-  const [editorId] = useState(() => `contract-editor-${Math.random().toString(36).substr(2, 9)}`);
+  const [editorId, setEditorId] = useState<string>("");
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
@@ -44,22 +44,31 @@ export function ContractEditor({
         console.error('Failed to load TinyMCE');
       };
       document.head.appendChild(script);
-    } else {
+    } else if (typeof window !== 'undefined') {
       setIsLoaded(true);
     }
 
     return () => {
-      if (window.tinymce && tinymceRef.current) {
+      if (typeof window !== 'undefined' && window.tinymce && tinymceRef.current) {
         window.tinymce.remove(tinymceRef.current);
       }
     };
   }, []);
 
   useEffect(() => {
-    if (isLoaded && editorRef.current) {
+    if (isLoaded && editorId && editorRef.current) {
       initEditor();
     }
-  }, [isLoaded]);
+  }, [isLoaded, editorId]);
+
+  useEffect(() => {
+    if (!editorId && typeof window !== 'undefined') {
+      const id = typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? `contract-editor-${crypto.randomUUID()}`
+        : `contract-editor-${Math.random().toString(36).substr(2, 9)}`;
+      setEditorId(id);
+    }
+  }, [editorId]);
 
   const initEditor = () => {
     if (typeof window !== 'undefined' && window.tinymce && editorRef.current) {

@@ -35,15 +35,16 @@ const statusConfig = {
 }
 
 export default function AttendancePage() {
-  const [currentTime, setCurrentTime] = useState(new Date())
+  const [currentTime, setCurrentTime] = useState<Date | null>(null)
   const [clockInTime, setClockInTime] = useState("")
   const [clockOutTime, setClockOutTime] = useState("")
   const [hasTodayRecord, setHasTodayRecord] = useState(false)
   const [location, setLocation] = useState("")
   const [attendanceRecords, setAttendanceRecords] = useState<AttRecord[]>([])
-  const [yearMonth, setYearMonth] = useState({ year: new Date().getFullYear(), month: new Date().getMonth() + 1 })
+  const [yearMonth, setYearMonth] = useState<{ year: number; month: number } | null>(null)
 
   const loadAttendance = useCallback(async () => {
+    if (!yearMonth) return
     try {
       const res = await apiWorker<{ list: { work_date?: string; clock_in?: string; clock_out?: string; hours?: number }[] }>("/api/attendance/my", {
         query: { year: yearMonth.year, month: yearMonth.month },
@@ -70,7 +71,13 @@ export default function AttendancePage() {
     } catch {
       setAttendanceRecords([])
     }
-  }, [yearMonth.year, yearMonth.month])
+  }, [yearMonth])
+
+  useEffect(() => {
+    const now = new Date()
+    setCurrentTime(now)
+    setYearMonth({ year: now.getFullYear(), month: now.getMonth() + 1 })
+  }, [])
 
   useEffect(() => {
     loadAttendance()
@@ -98,10 +105,23 @@ export default function AttendancePage() {
           <CardContent className="p-6">
             <div className="text-center mb-4">
               <p className="text-sm text-muted-foreground mb-1">
-                {currentTime.toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric", weekday: "long" })}
+                {currentTime
+                  ? currentTime.toLocaleDateString("zh-CN", {
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                      weekday: "long",
+                    })
+                  : ""}
               </p>
               <p className="text-2xl font-bold font-mono">
-                {currentTime.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                {currentTime
+                  ? currentTime.toLocaleTimeString("zh-CN", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      second: "2-digit",
+                    })
+                  : "--:--:--"}
               </p>
             </div>
 
@@ -161,16 +181,38 @@ export default function AttendancePage() {
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8"
-                  onClick={() => setYearMonth((prev) => (prev.month <= 1 ? { year: prev.year - 1, month: 12 } : { ...prev, month: prev.month - 1 }))}
+                  onClick={() =>
+                    setYearMonth((prev) => {
+                      const base = prev ?? {
+                        year: new Date().getFullYear(),
+                        month: new Date().getMonth() + 1,
+                      }
+                      return base.month <= 1
+                        ? { year: base.year - 1, month: 12 }
+                        : { ...base, month: base.month - 1 }
+                    })
+                  }
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <span className="text-sm">{yearMonth.year}年{yearMonth.month}月</span>
+                <span className="text-sm">
+                  {yearMonth ? `${yearMonth.year}年${yearMonth.month}月` : ""}
+                </span>
                 <Button
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8"
-                  onClick={() => setYearMonth((prev) => (prev.month >= 12 ? { year: prev.year + 1, month: 1 } : { ...prev, month: prev.month + 1 }))}
+                  onClick={() =>
+                    setYearMonth((prev) => {
+                      const base = prev ?? {
+                        year: new Date().getFullYear(),
+                        month: new Date().getMonth() + 1,
+                      }
+                      return base.month >= 12
+                        ? { year: base.year + 1, month: 1 }
+                        : { ...base, month: base.month + 1 }
+                    })
+                  }
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>

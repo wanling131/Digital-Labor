@@ -67,7 +67,7 @@ export default function MonitorPage() {
   const [system, setSystem] = useState<SystemStats | null>(null)
   const [database, setDatabase] = useState<DatabaseStats | null>(null)
   const [slowEndpoints, setSlowEndpoints] = useState<SlowEndpoint[]>([])
-  const [lastUpdate, setLastUpdate] = useState<Date>(new Date())
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
 
   const fetchAllData = async () => {
     setLoading(true)
@@ -123,7 +123,7 @@ export default function MonitorPage() {
         </div>
         <div className="flex items-center gap-4">
           <span className="text-sm text-muted-foreground">
-            最后更新: {lastUpdate.toLocaleTimeString()}
+            最后更新: {lastUpdate ? lastUpdate.toLocaleTimeString() : "--"}
           </span>
           <Button
             variant="outline"
