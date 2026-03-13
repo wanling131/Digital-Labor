@@ -190,7 +190,8 @@ export default function SalaryPage() {
   const changePercent = lastMonthSalary && lastMonthSalary.total ? ((salaryChange / lastMonthSalary.total) * 100).toFixed(1) : "0"
 
   return (
-    <PullRefresh onRefresh={handleRefresh} className="pb-24 flex-1 min-h-0">
+    <div className="flex-1 min-h-0 flex flex-col">
+      <PullRefresh onRefresh={handleRefresh} className="pb-24 flex-1 min-h-0">
       {/* Header */}
       <div className="bg-gradient-to-br from-primary to-primary/90 px-4 pt-4 pb-16 text-primary-foreground">
         <PageHeader title="工资查询" backHref="/h5" transparent />
@@ -522,8 +523,8 @@ export default function SalaryPage() {
           )}
         </DialogContent>
       </Dialog>
-
+      </PullRefresh>
       <BottomNav />
-    </PullRefresh>
+    </div>
   )
 }

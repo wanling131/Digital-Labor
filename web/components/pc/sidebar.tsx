@@ -137,6 +137,16 @@ const defaultMenuItems: MenuItem[] = [
   { title: "系统监控", icon: Activity, href: "/pc/monitor" },
 ]
 
+// 一些后端返回的父级 path（/pc/personnel 等）本身没有页面，只需要展开默认子菜单
+const PARENT_WITH_DEFAULT_CHILDREN = new Set([
+  "/pc/personnel",
+  "/pc/contract",
+  "/pc/attendance",
+  "/pc/settlement",
+  "/pc/site",
+  "/pc/system",
+])
+
 function apiMenuToItem(m: { path: string; label: string; children?: unknown[] }): MenuItem | null {
   const icon = PATH_ICONS[m.path] ?? Settings
   if (m.children && Array.isArray(m.children) && m.children.length > 0) {
@@ -151,13 +161,29 @@ function apiMenuToItem(m: { path: string; label: string; children?: unknown[] })
     if (children.length === 0) return null
     return { title: m.label, icon, children }
   }
+  // 如果后端返回的是 /pc/system、/pc/attendance 这类父级 path，但没有 children，
+  // 则使用本地的 defaultMenuItems 子菜单配置，父级只负责展开，不直接跳转路由。
+  // 这里完全基于 path 前缀匹配，不依赖后端返回的 label 文本，避免文案不一致导致兜底失败。
+  if (PARENT_WITH_DEFAULT_CHILDREN.has(m.path)) {
+    const children: MenuItem["children"] = []
+    defaultMenuItems.forEach((group) => {
+      group.children?.forEach((child) => {
+        if (child.href.startsWith(m.path + "/")) {
+          children.push(child)
+        }
+      })
+    })
+    if (children.length > 0) {
+      return { title: m.label, icon, children }
+    }
+  }
+  // 其他普通菜单直接作为可点击链接
   return { title: m.label, icon, href: m.path }
 }
 
 export function Sidebar() {
   const pathname = usePathname()
   const [menusFromApi, setMenusFromApi] = useState<MenuItem[] | null>(null)
-  const [isCollapsed, setIsCollapsed] = useState(false)
 
   useEffect(() => {
     api<{ menus: { path: string; label: string; children?: unknown[] }[] }>("/api/sys/my-menu")
@@ -237,6 +263,7 @@ export function Sidebar() {
             ) : (
               <>
                 <button
+                  type="button"
                   onClick={() => toggleExpand(item.title)}
                   className={cn(
                     "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",

@@ -34,15 +34,27 @@ const pathNameMap: Record<string, string> = {
   logs: "操作日志",
 }
 
+// 这些 /pc 下的父级路径没有单独页面，只是分组节点
+const PARENT_ONLY_PATHS = new Set([
+  "/pc/personnel",
+  "/pc/contract",
+  "/pc/attendance",
+  "/pc/settlement",
+  "/pc/site",
+  "/pc/system",
+])
+
 export function Breadcrumb() {
   const pathname = usePathname()
-  
+
   const breadcrumbs = useMemo(() => {
     const paths = pathname.split("/").filter(Boolean)
     return paths.map((path, index) => {
       const href = "/" + paths.slice(0, index + 1).join("/")
       const name = pathNameMap[path] || path
-      return { href, name, isLast: index === paths.length - 1 }
+      const isLast = index === paths.length - 1
+      const isParentOnly = PARENT_ONLY_PATHS.has(href)
+      return { href, name, isLast, isParentOnly }
     })
   }, [pathname])
 
@@ -50,20 +62,20 @@ export function Breadcrumb() {
 
   return (
     <nav className="flex items-center gap-1 text-sm text-muted-foreground mb-4">
-      <Link 
-        href="/pc/dashboard" 
+      <Link
+        href="/pc/dashboard"
         className="flex items-center gap-1 hover:text-foreground transition-colors"
       >
         <Home className="h-4 w-4" />
       </Link>
-      {breadcrumbs.slice(1).map((crumb, index) => (
+      {breadcrumbs.slice(1).map((crumb) => (
         <div key={crumb.href} className="flex items-center gap-1">
           <ChevronRight className="h-4 w-4" />
-          {crumb.isLast ? (
-            <span className="text-foreground font-medium">{crumb.name}</span>
+          {crumb.isLast || crumb.isParentOnly ? (
+            <span className={crumb.isLast ? "text-foreground font-medium" : ""}>{crumb.name}</span>
           ) : (
-            <Link 
-              href={crumb.href} 
+            <Link
+              href={crumb.href}
               className="hover:text-foreground transition-colors"
             >
               {crumb.name}

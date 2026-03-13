@@ -32,17 +32,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import {
-  Building2,
-  Wrench,
-  FileText,
-  Plus,
-  RefreshCw,
-  HomeButton,
-  Loader2,
-  AlertCircle,
-  CheckCircle2,
-} from "lucide-react"
+import { Building2, Wrench, FileText, Plus, RefreshCw, Loader2, AlertCircle, CheckCircle2 } from "lucide-react"
+import { HomeButton } from "@/components/pc/home-button"
 import { api } from "@/lib/api"
 
 interface BoardRes {
@@ -79,8 +70,8 @@ export default function SiteMonitorPage() {
   const [loading, setLoading] = useState(true)
   const [logDialogOpen, setLogDialogOpen] = useState(false)
   const [eqDialogOpen, setEqDialogOpen] = useState(false)
-  const [newLog, setNewLog] = useState({ org_id: "", log_type: "备注", content: "" })
-  const [newEq, setNewEq] = useState({ org_id: "", name: "", code: "", status: "正常" })
+  const [newLog, setNewLog] = useState({ org_id: "none", log_type: "备注", content: "" })
+  const [newEq, setNewEq] = useState({ org_id: "none", name: "", code: "", status: "正常" })
   const [submitting, setSubmitting] = useState(false)
 
   const flattenOrg = (nodes: { id: number; name: string; children?: unknown[] }[]): { id: number; name: string }[] => {
@@ -144,13 +135,13 @@ export default function SiteMonitorPage() {
       await api("/api/site/site-log", {
         method: "POST",
         body: {
-          org_id: newLog.org_id ? parseInt(newLog.org_id, 10) : undefined,
+          org_id: newLog.org_id && newLog.org_id !== "none" ? parseInt(newLog.org_id, 10) : undefined,
           log_type: newLog.log_type,
           content: newLog.content.trim() || undefined,
         },
       })
       setLogDialogOpen(false)
-      setNewLog({ org_id: "", log_type: "备注", content: "" })
+      setNewLog({ org_id: "none", log_type: "备注", content: "" })
       fetchSiteLogs()
     } finally {
       setSubmitting(false)
@@ -164,14 +155,14 @@ export default function SiteMonitorPage() {
       await api("/api/site/equipment", {
         method: "POST",
         body: {
-          org_id: newEq.org_id ? parseInt(newEq.org_id, 10) : undefined,
+          org_id: newEq.org_id && newEq.org_id !== "none" ? parseInt(newEq.org_id, 10) : undefined,
           name: newEq.name.trim(),
           code: newEq.code.trim() || undefined,
           status: newEq.status,
         },
       })
       setEqDialogOpen(false)
-      setNewEq({ org_id: "", name: "", code: "", status: "正常" })
+      setNewEq({ org_id: "none", name: "", code: "", status: "正常" })
       fetchEquipment()
     } finally {
       setSubmitting(false)
@@ -300,7 +291,7 @@ export default function SiteMonitorPage() {
                                 <SelectValue placeholder="可选" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="">不指定</SelectItem>
+                                <SelectItem value="none">不指定</SelectItem>
                                 {orgList.map((o) => (
                                   <SelectItem key={o.id} value={String(o.id)}>{o.name}</SelectItem>
                                 ))}
@@ -439,7 +430,7 @@ export default function SiteMonitorPage() {
                                 <SelectValue placeholder="可选" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="">不指定</SelectItem>
+                                <SelectItem value="none">不指定</SelectItem>
                                 {orgList.map((o) => (
                                   <SelectItem key={o.id} value={String(o.id)}>{o.name}</SelectItem>
                                 ))}

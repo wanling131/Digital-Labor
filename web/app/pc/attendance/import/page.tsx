@@ -111,6 +111,94 @@ export default function AttendanceImportPage() {
     fetchImportHistory()
   }, [])
 
+  const renderHistoryRows = () => {
+    if (historyLoading) {
+      return (
+        <TableRow>
+          <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+            加载中...
+          </TableCell>
+        </TableRow>
+      )
+    }
+
+    if (importHistory.length === 0) {
+      return (
+        <TableRow>
+          <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+            暂无导入记录
+          </TableCell>
+        </TableRow>
+      )
+    }
+
+    return importHistory.map((record) => {
+      const config = statusConfig[record.status as keyof typeof statusConfig]
+      return (
+        <TableRow key={record.id}>
+          <TableCell className="font-medium">{record.id}</TableCell>
+          <TableCell>
+            <div className="flex items-center gap-2">
+              <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
+              {record.fileName}
+            </div>
+          </TableCell>
+          <TableCell>{record.project}</TableCell>
+          <TableCell>{record.period}</TableCell>
+          <TableCell>
+            <div className="text-sm">
+              <p>总计: {record.totalRecords.toLocaleString()}</p>
+              <p className="text-muted-foreground">
+                有效: {record.validRecords.toLocaleString()}
+              </p>
+            </div>
+          </TableCell>
+          <TableCell>
+            <div className="flex items-center gap-2 text-sm">
+              {record.duplicateRecords > 0 && (
+                <Badge variant="outline" className="text-xs">
+                  重复 {record.duplicateRecords}
+                </Badge>
+              )}
+              {record.errorRecords > 0 && (
+                <Badge
+                  variant="outline"
+                  className="text-xs bg-destructive/10 text-destructive border-destructive/20"
+                >
+                  异常 {record.errorRecords}
+                </Badge>
+              )}
+              {record.duplicateRecords === 0 && record.errorRecords === 0 && (
+                <span className="text-muted-foreground">-</span>
+              )}
+            </div>
+          </TableCell>
+          <TableCell>
+            <Badge variant="outline" className={`gap-1 ${config.color}`}>
+              <config.icon className="h-3 w-3" />
+              {config.label}
+            </Badge>
+          </TableCell>
+          <TableCell className="text-muted-foreground text-sm">
+            {record.importTime}
+          </TableCell>
+          <TableCell className="text-right">
+            <div className="flex items-center justify-end gap-1">
+              <Button variant="ghost" size="sm">
+                详情
+              </Button>
+              {record.status === "failed" && (
+                <Button variant="ghost" size="sm" className="text-destructive">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          </TableCell>
+        </TableRow>
+      )
+    })
+  }
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
     setUploadResult(null)
@@ -387,87 +475,7 @@ export default function AttendanceImportPage() {
                 <TableHead className="text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
-              {historyLoading ? (
-                <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                    加载中...
-                  </TableCell>
-                </TableRow>
-              ) : importHistory.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                    暂无导入记录
-                  </TableCell>
-                </TableRow>
-              ) : (
-                importHistory.map((record) => {
-                const config = statusConfig[record.status as keyof typeof statusConfig]
-                return (
-                  <TableRow key={record.id}>
-                    <TableCell className="font-medium">{record.id}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
-                        {record.fileName}
-                      </div>
-                    </TableCell>
-                    <TableCell>{record.project}</TableCell>
-                    <TableCell>{record.period}</TableCell>
-                    <TableCell>
-                      <div className="text-sm">
-                        <p>总计: {record.totalRecords.toLocaleString()}</p>
-                        <p className="text-muted-foreground">
-                          有效: {record.validRecords.toLocaleString()}
-                        </p>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2 text-sm">
-                        {record.duplicateRecords > 0 && (
-                          <Badge variant="outline" className="text-xs">
-                            重复 {record.duplicateRecords}
-                          </Badge>
-                        )}
-                        {record.errorRecords > 0 && (
-                          <Badge
-                            variant="outline"
-                            className="text-xs bg-destructive/10 text-destructive border-destructive/20"
-                          >
-                            异常 {record.errorRecords}
-                          </Badge>
-                        )}
-                        {record.duplicateRecords === 0 && record.errorRecords === 0 && (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={`gap-1 ${config.color}`}>
-                        <config.icon className="h-3 w-3" />
-                        {config.label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {record.importTime}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="sm">
-                          详情
-                        </Button>
-                        {record.status === "failed" && (
-                          <Button variant="ghost" size="sm" className="text-destructive">
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
-              )}
-            </TableBody>
+            <TableBody>{renderHistoryRows()}</TableBody>
           </Table>
         </CardContent>
       </Card>

@@ -43,7 +43,7 @@ export default function AttendanceLogPage() {
   const [pageSize] = useState(50)
   const [loading, setLoading] = useState(true)
   const [orgList, setOrgList] = useState<{ id: number; name: string }[]>([])
-  const [orgId, setOrgId] = useState("")
+  const [orgId, setOrgId] = useState("all")
   const [start, setStart] = useState(() => {
     const d = new Date()
     d.setDate(1)
@@ -65,7 +65,7 @@ export default function AttendanceLogPage() {
     setLoading(true)
     try {
       const q: Record<string, string> = { page: String(page), pageSize: String(pageSize) }
-      if (orgId) q.org_id = orgId
+      if (orgId && orgId !== "all") q.org_id = orgId
       if (start) q.start = start
       if (end) q.end = end
       const res = await api<{ list: LogItem[]; total: number }>("/api/attendance/log", { query: q })
@@ -170,7 +170,7 @@ export default function AttendanceLogPage() {
                 <SelectValue placeholder="全部项目" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">全部项目</SelectItem>
+                <SelectItem value="all">全部项目</SelectItem>
                 {orgList.map((o) => (
                   <SelectItem key={o.id} value={String(o.id)}>{o.name}</SelectItem>
                 ))}

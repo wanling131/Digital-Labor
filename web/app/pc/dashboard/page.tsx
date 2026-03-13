@@ -138,15 +138,6 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold text-foreground">综合数据看板</h1>
           <p className="text-muted-foreground">实时监控核心业务指标</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-accent animate-pulse" />
-            实时更新
-          </Badge>
-          <span className="text-sm text-muted-foreground">
-            最后更新: {new Date().toLocaleString("zh-CN")}
-          </span>
-        </div>
       </div>
 
       {/* 告警提示 */}

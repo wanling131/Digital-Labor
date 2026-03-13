@@ -128,7 +128,8 @@ export default function ProfilePage() {
   }, [])
 
   return (
-    <PullRefresh onRefresh={handleRefresh} className="pb-24 flex-1 min-h-0">
+    <div className="flex-1 min-h-0 flex flex-col">
+      <PullRefresh onRefresh={handleRefresh} className="pb-24 flex-1 min-h-0">
       {/* Header */}
       <div className="bg-gradient-to-br from-primary to-primary/90 px-4 pt-12 pb-20 text-primary-foreground">
         <div className="flex items-center justify-between mb-6">
@@ -371,8 +372,8 @@ export default function ProfilePage() {
       <div className="text-center text-xs text-muted-foreground mb-4">
         版本 1.0.0
       </div>
-
+      </PullRefresh>
       <BottomNav />
-    </PullRefresh>
+    </div>
   )
 }

@@ -87,7 +87,8 @@ export default function AttendancePage() {
   }, [loadAttendance])
 
   return (
-    <PullRefresh onRefresh={handleRefresh} className="pb-24 flex-1 min-h-0">
+    <div className="flex-1 min-h-0 flex flex-col">
+      <PullRefresh onRefresh={handleRefresh} className="pb-24 flex-1 min-h-0">
       {/* Header */}
       <PageHeader title="考勤" backHref="/h5" />
 
@@ -245,8 +246,8 @@ export default function AttendancePage() {
           </CardContent>
         </Card>
       </div>
-
+      </PullRefresh>
       <BottomNav />
-    </PullRefresh>
+    </div>
   )
 }

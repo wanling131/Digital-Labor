@@ -307,7 +307,8 @@ export default function ContractPage() {
   }
 
   return (
-    <PullRefresh onRefresh={handleRefresh} className="pb-24 flex-1 min-h-0">
+    <div className="flex-1 min-h-0 flex flex-col">
+      <PullRefresh onRefresh={handleRefresh} className="pb-24 flex-1 min-h-0">
       {/* Success Toast */}
       {signedSuccess && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-accent text-accent-foreground px-4 py-2 rounded-full shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
@@ -566,8 +567,8 @@ export default function ContractPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
+      </PullRefresh>
       <BottomNav />
-    </PullRefresh>
+    </div>
   )
 }

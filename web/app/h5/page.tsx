@@ -133,7 +133,8 @@ export default function H5HomePage() {
   }
 
   return (
-    <PullRefresh onRefresh={handleRefresh} className="pb-24 flex-1 min-h-0">
+    <div className="flex-1 min-h-0 flex flex-col">
+      <PullRefresh onRefresh={handleRefresh} className="pb-24 flex-1 min-h-0">
       {/* Header */}
       <div className="bg-gradient-to-br from-primary to-primary/90 px-4 pt-12 pb-16 text-primary-foreground">
         <div className="flex items-center justify-between mb-6">
@@ -332,8 +333,8 @@ export default function H5HomePage() {
           </CardContent>
         </Card>
       </div>
-
+      </PullRefresh>
       <BottomNav />
-    </PullRefresh>
+    </div>
   )
 }
