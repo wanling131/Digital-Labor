@@ -75,10 +75,10 @@ export default function DashboardPage() {
   const signChange = board?.signRateChange ?? "0"
   const onSiteChange = board?.onSiteRateChange ?? "0"
   const stats = [
-    { title: "总人数", value: loading ? "—" : (board?.total ?? 0).toLocaleString(), change: `${Number(totalChange) >= 0 ? "+" : ""}${totalChange}%`, trend: (Number(totalChange) >= 0 ? "up" : "down") as const, icon: Users, color: "bg-primary/10 text-primary" },
-    { title: "实名认证率", value: loading ? "—" : `${board?.realNameRate ?? 0}%`, change: `${Number(realNameChange) >= 0 ? "+" : ""}${realNameChange}%`, trend: (Number(realNameChange) >= 0 ? "up" : "down") as const, icon: UserCheck, color: "bg-accent/10 text-accent" },
-    { title: "合同签约率", value: loading ? "—" : `${board?.signRate ?? 0}%`, change: `${Number(signChange) >= 0 ? "+" : ""}${signChange}%`, trend: (Number(signChange) >= 0 ? "up" : "down") as const, icon: FileCheck, color: "bg-chart-3/10 text-chart-3" },
-    { title: "今日在岗率", value: loading ? "—" : `${board?.onSiteRate ?? 0}%`, change: `${Number(onSiteChange) >= 0 ? "+" : ""}${onSiteChange}%`, trend: (Number(onSiteChange) >= 0 ? "up" : "down") as const, icon: Clock, color: "bg-chart-5/10 text-chart-5" },
+    { title: "总人数", value: loading ? "—" : (board?.total ?? 0).toLocaleString(), change: `${Number(totalChange) >= 0 ? "+" : ""}${totalChange}%`, trend: Number(totalChange) >= 0 ? "up" : "down", icon: Users, color: "bg-primary/10 text-primary" },
+    { title: "实名认证率", value: loading ? "—" : `${board?.realNameRate ?? 0}%`, change: `${Number(realNameChange) >= 0 ? "+" : ""}${realNameChange}%`, trend: Number(realNameChange) >= 0 ? "up" : "down", icon: UserCheck, color: "bg-accent/10 text-accent" },
+    { title: "合同签约率", value: loading ? "—" : `${board?.signRate ?? 0}%`, change: `${Number(signChange) >= 0 ? "+" : ""}${signChange}%`, trend: Number(signChange) >= 0 ? "up" : "down", icon: FileCheck, color: "bg-chart-3/10 text-chart-3" },
+    { title: "今日在岗率", value: loading ? "—" : `${board?.onSiteRate ?? 0}%`, change: `${Number(onSiteChange) >= 0 ? "+" : ""}${onSiteChange}%`, trend: Number(onSiteChange) >= 0 ? "up" : "down", icon: Clock, color: "bg-chart-5/10 text-chart-5" },
   ]
 
   const alerts = [
