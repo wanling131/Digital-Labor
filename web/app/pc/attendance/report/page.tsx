@@ -53,6 +53,8 @@ interface AttendanceItem {
   clock_in?: string
   clock_out?: string
   hours?: number
+  overtime_hours?: number
+  standard_hours?: number
 }
 
 const personnelWorkHoursMock = [
@@ -137,6 +139,7 @@ export default function AttendanceReportPage() {
   const [list, setList] = useState<AttendanceItem[]>([])
   const [total, setTotal] = useState(0)
   const [orgList, setOrgList] = useState<{ id: number; name: string }[]>([])
+  const [backfillLoading, setBackfillLoading] = useState(false)
 
   const fetchList = useCallback(async () => {
     try {
@@ -173,22 +176,46 @@ export default function AttendanceReportPage() {
   useEffect(() => { fetchList() }, [fetchList])
   useEffect(() => { fetchOrg() }, [fetchOrg])
 
+  const handleBackfillOvertime = async () => {
+    if (!month) return
+    setBackfillLoading(true)
+    try {
+      const [y, m] = month.split("-").map(Number)
+      const lastDay = new Date(y, m, 0).getDate()
+      const start = `${month}-01`
+      const end = `${month}-${String(lastDay).padStart(2, "0")}`
+      const res = await api<{ ok: boolean; count?: number }>("/api/attendance/backfill-overtime", {
+        method: "POST",
+        body: { start, end },
+      })
+      if (res.ok) {
+        alert(`补全成功，共更新 ${res.count ?? 0} 条记录`)
+        fetchList()
+      }
+    } catch (e) {
+      alert((e as Error).message || "补全失败")
+    } finally {
+      setBackfillLoading(false)
+    }
+  }
+
   const filteredData = list.filter((p) =>
     (p.person_name ?? "").includes(searchTerm) || (p.work_no ?? "").includes(searchTerm)
   )
 
   const workDaysByPerson = filteredData.reduce((acc, r) => {
     const k = r.person_id
-    if (!acc[k]) acc[k] = { name: r.person_name ?? "-", work_no: r.work_no ?? "-", org: r.org_name ?? "-", days: 0, hours: 0 }
+    if (!acc[k]) acc[k] = { name: r.person_name ?? "-", work_no: r.work_no ?? "-", org: r.org_name ?? "-", days: 0, hours: 0, overtime: 0 }
     acc[k].days++
     acc[k].hours += r.hours ?? 0
+    acc[k].overtime += r.overtime_hours ?? 0
     return acc
-  }, {} as Record<number, { name: string; work_no: string; org: string; days: number; hours: number }>)
-  const personList = Object.entries(workDaysByPerson).map(([id, v]) => ({ id: Number(id), ...v }))
+  }, {} as Record<number, { name: string; work_no: string; org: string; days: number; hours: number; overtime: number }>)
+  const personList = Object.entries(workDaysByPerson).map(([id, v]) => ({ id: Number(id), ...v })) as { id: number; name: string; work_no: string; org: string; days: number; hours: number; overtime: number }[]
   const totalHours = personList.reduce((s, p) => s + p.hours, 0)
 
   const handleExportCsv = () => {
-    const headers = ["工号", "姓名", "组织", "日期", "上班", "下班", "工时"]
+    const headers = ["工号", "姓名", "组织", "日期", "上班", "下班", "工时", "加班"]
     const rows = filteredData.map((r) => [
       r.work_no ?? "",
       r.person_name ?? "",
@@ -197,6 +224,7 @@ export default function AttendanceReportPage() {
       r.clock_in ?? "",
       r.clock_out ?? "",
       String(r.hours ?? 0),
+      String(r.overtime_hours ?? 0),
     ])
     const csv = [headers.join(","), ...rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))].join("\n")
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" })
@@ -247,6 +275,14 @@ export default function AttendanceReportPage() {
               })}
             </SelectContent>
           </Select>
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={handleBackfillOvertime}
+            disabled={backfillLoading}
+          >
+            {backfillLoading ? "补全中..." : "批量补全加班"}
+          </Button>
           <Button variant="outline" className="gap-2" onClick={handleExportCsv}>
             <Download className="h-4 w-4" />
             导出报表
@@ -433,7 +469,7 @@ export default function AttendanceReportPage() {
                       <TableCell>{person.days}天</TableCell>
                       <TableCell className="font-medium">{person.hours.toFixed(1)}小时</TableCell>
                       <TableCell>{(person.days ? person.hours / person.days : 0).toFixed(1)}小时</TableCell>
-                      <TableCell><span className="text-muted-foreground">-</span></TableCell>
+                      <TableCell>{person.overtime != null && person.overtime > 0 ? `${person.overtime.toFixed(1)}小时` : "-"}</TableCell>
                       <TableCell className="text-right">
                         <Button variant="ghost" size="sm">详情</Button>
                       </TableCell>

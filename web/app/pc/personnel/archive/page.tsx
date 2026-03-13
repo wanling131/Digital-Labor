@@ -56,8 +56,10 @@ import {
   Award,
   Loader2,
 } from "lucide-react"
-import { api } from "@/lib/api"
+import { api, getToken } from "@/lib/api"
+import { usePermissions } from "@/lib/permissions"
 import { HomeButton } from "@/components/pc/home-button"
+import { JobTitleSelect } from "@/components/pc/job-title-select"
 
 function maskIdCard(s?: string | null) {
   if (!s || s.length < 8) return "—"
@@ -90,6 +92,7 @@ function flattenOrg(tree: { id: number; name: string; children?: unknown[] }[]):
 }
 
 export default function PersonnelArchivePage() {
+  const { hasPermission } = usePermissions()
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedStatus, setSelectedStatus] = useState<string>("all")
   const [selectedOrgId, setSelectedOrgId] = useState<string>("all")
@@ -116,6 +119,7 @@ export default function PersonnelArchivePage() {
   const [importSuccess, setImportSuccess] = useState<string | null>(null)
   const [importErrors, setImportErrors] = useState<{ row: number; errors: string[] }[]>([])
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [importDefaultJobTitle, setImportDefaultJobTitle] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const loadList = useCallback(async () => {
@@ -152,8 +156,9 @@ export default function PersonnelArchivePage() {
 
   const loadJobTitles = useCallback(async () => {
     try {
-      const res = await api<{ list: string[] }>("/api/person/job-titles")
-      setJobTitles(res.list || [])
+      const res = await api<{ list?: unknown[]; flat?: string[] }>("/api/person/job-titles", { query: { flat: "1" } })
+      const flat = res.flat ?? (Array.isArray(res.list) ? res.list.filter((x): x is string => typeof x === "string") : [])
+      setJobTitles(flat)
     } catch {
       setJobTitles([])
     }
@@ -282,11 +287,17 @@ export default function PersonnelArchivePage() {
 
     try {
       const formData = new FormData()
-      formData.append('file', selectedFile)
+      formData.append("file", selectedFile)
+      if (importDefaultJobTitle.trim()) {
+        formData.append("default_job_title", importDefaultJobTitle.trim())
+      }
 
-      const res = await fetch('/api/person/batch-import', {
-        method: 'POST',
-        body: formData
+      const token = getToken()
+      const res = await fetch("/api/person/batch-import", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       })
 
       const data = await res.json()
@@ -354,6 +365,7 @@ export default function PersonnelArchivePage() {
           </div>
           </div>
           <div className="flex items-center gap-2">
+          {hasPermission("person:import") && (
           <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" className="gap-2">
@@ -369,6 +381,15 @@ export default function PersonnelArchivePage() {
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
+                {/* 默认工种（Excel 中工种为空时使用） */}
+                <div className="space-y-2">
+                  <Label>默认工种（可选）</Label>
+                  <JobTitleSelect
+                    value={importDefaultJobTitle}
+                    onChange={setImportDefaultJobTitle}
+                    placeholder="工种为空时使用"
+                  />
+                </div>
                 {/* 文件上传 */}
                 <div className="space-y-2">
                   <Label>选择文件</Label>
@@ -541,7 +562,7 @@ export default function PersonnelArchivePage() {
                   </div>
                   <div className="space-y-2">
                     <Label>工种</Label>
-                    <Input value={formData.job_title} onChange={(e) => setFormData((d) => ({ ...d, job_title: e.target.value }))} placeholder="请输入工种" />
+                    <JobTitleSelect value={formData.job_title} onChange={(v) => setFormData((d) => ({ ...d, job_title: v }))} placeholder="选择工种" />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -573,6 +594,7 @@ export default function PersonnelArchivePage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          )}
         </div>
       </div>
 
@@ -758,10 +780,13 @@ export default function PersonnelArchivePage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                          {hasPermission("person:edit") && (
                           <DropdownMenuItem className="gap-2" onClick={() => handleEdit(person)}>
                             <Edit className="h-4 w-4" />
                             编辑信息
                           </DropdownMenuItem>
+                          )}
+                          {hasPermission("person:delete") && (
                           <DropdownMenuItem
                             className="gap-2 text-destructive"
                             onClick={() => handleDelete(person.id)}
@@ -769,6 +794,7 @@ export default function PersonnelArchivePage() {
                             <Trash2 className="h-4 w-4" />
                             删除
                           </DropdownMenuItem>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
@@ -842,7 +868,7 @@ export default function PersonnelArchivePage() {
               </div>
               <div className="space-y-2">
                 <Label>工种</Label>
-                <Input value={formData.job_title} onChange={(e) => setFormData((d) => ({ ...d, job_title: e.target.value }))} placeholder="请输入工种" />
+                <JobTitleSelect value={formData.job_title} onChange={(v) => setFormData((d) => ({ ...d, job_title: v }))} placeholder="选择工种" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
