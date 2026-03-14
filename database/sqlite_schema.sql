@@ -44,7 +44,16 @@ CREATE TABLE IF NOT EXISTS person (
   bank_card TEXT,
   job_title TEXT,
   work_address TEXT,
-  signature_image TEXT
+  signature_image TEXT,
+  password_hash TEXT
+);
+
+CREATE TABLE IF NOT EXISTS worker_notification_settings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_id INTEGER NOT NULL UNIQUE,
+  push_enabled INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+  updated_at TEXT DEFAULT (CURRENT_TIMESTAMP)
 );
 
 CREATE TABLE IF NOT EXISTS attendance (

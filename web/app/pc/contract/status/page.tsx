@@ -52,6 +52,7 @@ type ContractItem = {
   deadline: string | null
   signed_at: string | null
   pdf_path: string | null
+  flow_id?: string | null
 }
 
 const statusConfig: Record<string, { label: string; color: string; icon: typeof CheckCircle }> = {
@@ -238,6 +239,7 @@ export default function ContractStatusPage() {
                   <TableHead>截止日</TableHead>
                   <TableHead>状态</TableHead>
                   <TableHead>签署时间</TableHead>
+                  <TableHead>存证编号</TableHead>
                   <TableHead className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
@@ -250,6 +252,7 @@ export default function ContractStatusPage() {
                     <TableCell className="text-muted-foreground">{c.deadline || "—"}</TableCell>
                     <TableCell>{getStatusBadge(c)}</TableCell>
                     <TableCell className="text-muted-foreground">{c.signed_at || "—"}</TableCell>
+                    <TableCell className="text-muted-foreground text-xs">{c.status === "已签署" ? (c.flow_id || "—") : "—"}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
                         <Button variant="ghost" size="sm" className="gap-1" onClick={() => { setSelectedContract(c); setIsDetailOpen(true) }}>
@@ -290,7 +293,7 @@ export default function ContractStatusPage() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>{selectedContract?.title}</DialogTitle>
-            <DialogDescription>签署信息；对接电子签后可展示存证</DialogDescription>
+            <DialogDescription>签署信息与存证（对接电子签后存证编号由第三方返回）</DialogDescription>
           </DialogHeader>
           {selectedContract && (
             <div className="space-y-4 py-4">
@@ -300,10 +303,10 @@ export default function ContractStatusPage() {
                 <div><p className="text-muted-foreground">截止日</p><p>{selectedContract.deadline || "—"}</p></div>
                 <div><p className="text-muted-foreground">状态</p>{getStatusBadge(selectedContract)}</div>
                 <div><p className="text-muted-foreground">签署时间</p><p>{selectedContract.signed_at || "—"}</p></div>
+                {selectedContract.status === "已签署" && (
+                  <div className="col-span-2"><p className="text-muted-foreground">存证编号</p><p className="font-mono text-xs break-all">{selectedContract.flow_id || "—"}</p></div>
+                )}
               </div>
-              {selectedContract.status === "已签署" && (
-                <p className="text-xs text-muted-foreground">存证信息：对接电子签后展示</p>
-              )}
               {selectedContract.status === "已签署" && (
                 <Button variant="outline" className="w-full gap-2" disabled={downloadingId === selectedContract.id} onClick={() => handleDownloadPdf(selectedContract.id)}>
                   {downloadingId === selectedContract.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}

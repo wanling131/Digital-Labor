@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional
 
 from sqlalchemy import text
 
+from digital_labor.auth.passwords import hash_password, verify_password
 from digital_labor.crypto_compat import encrypt, safe_decrypt_then_mask
 from digital_labor.db import get_engine
 
@@ -66,4 +67,74 @@ def my_certificates(worker_id: int) -> dict:
             {"id": worker_id},
         ).mappings().all()
     return {"list": [dict(r) for r in rows]}
+
+
+def change_password(worker_id: int, old_password: str, new_password: str) -> str:
+    """工人修改密码。返回 'ok' 或 'bad_old_password' 或 'weak_password'。"""
+    if not new_password or len(str(new_password).strip()) < 6:
+        return "weak_password"
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT password_hash FROM person WHERE id = :id"),
+            {"id": worker_id},
+        ).mappings().first()
+    if not row:
+        return "bad_old_password"
+    current = (row.get("password_hash") or "").strip()
+    if current:
+        if not verify_password(str(old_password or ""), current):
+            return "bad_old_password"
+    else:
+        # 首次设置密码时仍需提供旧密码（可为空，表示未设置过）
+        pass
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE person SET password_hash = :p, updated_at = CURRENT_TIMESTAMP WHERE id = :id"),
+            {"p": hash_password(str(new_password).strip()), "id": worker_id},
+        )
+    return "ok"
+
+
+def bind_mobile(worker_id: int, mobile: str, verify_code: Optional[str] = None) -> None:
+    """工人绑定手机号。当前未接短信时 verify_code 可省略或任意值。"""
+    mobile_s = (mobile or "").strip()
+    if not mobile_s:
+        raise ValueError("手机号不能为空")
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE person SET mobile = :m, updated_at = CURRENT_TIMESTAMP WHERE id = :id"),
+            {"m": encrypt(mobile_s), "id": worker_id},
+        )
+
+
+def get_notification_settings(worker_id: int) -> dict:
+    """获取工人通知设置，若无记录则返回默认 push_enabled=True。"""
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT worker_id, push_enabled, updated_at FROM worker_notification_settings WHERE worker_id = :id"),
+            {"id": worker_id},
+        ).mappings().first()
+    if not row:
+        return {"push_enabled": True}
+    return {"push_enabled": bool(row.get("push_enabled", 1))}
+
+
+def update_notification_settings(worker_id: int, push_enabled: bool) -> None:
+    """更新工人通知设置（upsert）。"""
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO worker_notification_settings (worker_id, push_enabled, updated_at)
+                VALUES (:id, :push, CURRENT_TIMESTAMP)
+                ON CONFLICT (worker_id) DO UPDATE SET push_enabled = :push, updated_at = CURRENT_TIMESTAMP
+                """
+            ),
+            {"id": worker_id, "push": 1 if push_enabled else 0},
+        )
 

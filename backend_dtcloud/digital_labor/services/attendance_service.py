@@ -42,6 +42,7 @@ def import_from_excel_rows(rows: List[Tuple[Any, ...]]) -> dict:
     in_idx = find_idx(r"上班|签到|clock.?in|开始")
     out_idx = find_idx(r"下班|签退|clock.?out|结束")
     hours_idx = find_idx(r"工时|hours|时长")
+    overtime_idx = find_idx(r"加班|overtime|加班时长")
     org_idx = find_idx(r"组织|班组|org|项目")
     if person_idx < 0 or date_idx < 0:
         raise ValueError("表格需包含人员(或姓名)列和日期列")
@@ -78,6 +79,18 @@ def import_from_excel_rows(rows: List[Tuple[Any, ...]]) -> dict:
                     hours = float(r[hours_idx])
                 except Exception:  # noqa: BLE001
                     hours = 0.0
+            overtime_hours = 0.0
+            if overtime_idx >= 0 and r[overtime_idx] is not None:
+                try:
+                    overtime_hours = float(r[overtime_idx])
+                except Exception:  # noqa: BLE001
+                    overtime_hours = 0.0
+            # 若有加班列则用其值，否则按工时>8 自动拆分：标准 8、其余为加班
+            if overtime_idx >= 0:
+                standard_hours = max(0.0, hours - overtime_hours)
+            else:
+                standard_hours = min(8.0, hours)
+                overtime_hours = max(0.0, hours - 8.0)
             org_id = None
             if org_idx >= 0 and r[org_idx] is not None:
                 try:
@@ -88,13 +101,23 @@ def import_from_excel_rows(rows: List[Tuple[Any, ...]]) -> dict:
             conn.execute(
                 text(
                     """
-                    INSERT INTO attendance (person_id, org_id, work_date, clock_in, clock_out, hours)
-                    VALUES (:pid, :oid, :d, :ci, :co, :h)
+                    INSERT INTO attendance (person_id, org_id, work_date, clock_in, clock_out, hours, standard_hours, overtime_hours)
+                    VALUES (:pid, :oid, :d, :ci, :co, :h, :std, :ot)
                     ON CONFLICT (person_id, work_date)
-                    DO UPDATE SET org_id = EXCLUDED.org_id, clock_in = EXCLUDED.clock_in, clock_out = EXCLUDED.clock_out, hours = EXCLUDED.hours
+                    DO UPDATE SET org_id = EXCLUDED.org_id, clock_in = EXCLUDED.clock_in, clock_out = EXCLUDED.clock_out,
+                      hours = EXCLUDED.hours, standard_hours = EXCLUDED.standard_hours, overtime_hours = EXCLUDED.overtime_hours
                     """
                 ),
-                {"pid": person_id, "oid": org_id, "d": work_date, "ci": clock_in, "co": clock_out, "h": hours},
+                {
+                    "pid": person_id,
+                    "oid": org_id,
+                    "d": work_date,
+                    "ci": clock_in,
+                    "co": clock_out,
+                    "h": hours,
+                    "std": standard_hours,
+                    "ot": overtime_hours,
+                },
             )
             if clock_in:
                 conn.execute(

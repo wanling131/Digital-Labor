@@ -205,6 +205,10 @@
 | GET | /api/worker/me | 工人端 | 当前人员档案（含 org_name、job_title、work_address；敏感字段脱敏） |
 | PUT | /api/worker/me | 工人端 | body `{ mobile?, id_card? }`，信息补全/修改 |
 | GET | /api/worker/certificates | 工人端 | 当前人员证书列表 `{ list: [{ id, name, certificate_no, issue_date, expiry_date, status }] }` |
+| POST | /api/worker/change-password | 工人端 | body `{ old_password, new_password }`，修改密码；新密码至少 6 位 |
+| POST | /api/worker/bind-mobile | 工人端 | body `{ mobile, verify_code? }`，绑定/更新手机号 |
+| GET | /api/worker/notification-settings | 工人端 | 返回 `{ push_enabled }`，默认 true |
+| PUT | /api/worker/notification-settings | 工人端 | body `{ push_enabled: boolean }`，更新推送通知开关 |
 
 ---
 

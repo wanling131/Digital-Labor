@@ -61,6 +61,22 @@ def create_app() -> FastAPI:
                 conn.execute(text("SELECT 1"))
         except Exception as e:  # noqa: BLE001
             logging.warning("Database unreachable at startup: %s", e)
+        else:
+            try:
+                from digital_labor.db_migrations import run_attendance_overtime_migration
+                run_attendance_overtime_migration()
+            except Exception as e:  # noqa: BLE001
+                logging.warning("Migration run_attendance_overtime failed: %s", e)
+            try:
+                from digital_labor.db_migrations import run_worker_password_and_notification_migration
+                run_worker_password_and_notification_migration()
+            except Exception as e:  # noqa: BLE001
+                logging.warning("Migration run_worker_password_and_notification failed: %s", e)
+            try:
+                from digital_labor.db_migrations import ensure_user_role_has_export_permission
+                ensure_user_role_has_export_permission()
+            except Exception as e:  # noqa: BLE001
+                logging.warning("Migration ensure_user_role_has_export_permission failed: %s", e)
 
     app.add_middleware(
         CORSMiddleware,

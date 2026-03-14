@@ -288,7 +288,7 @@ def seed_role_permission_if_empty() -> None:
         if int(n) > 0:
             return
     default_user_perms = [
-        "person:view", "person:add", "person:edit", "person:import", "person:batch_status",
+        "person:view", "person:add", "person:edit", "person:export", "person:import", "person:batch_status",
         "contract:view", "contract:add", "contract:edit",
         "settlement:view", "settlement:generate", "settlement:confirm",
         "attendance:view", "attendance:import", "attendance:log",
@@ -385,6 +385,7 @@ ALL_PERMISSION_KEYS = [
     "person:add",
     "person:edit",
     "person:delete",
+    "person:export",
     "person:import",
     "person:batch_status",
     "contract:view",
@@ -429,7 +430,7 @@ def role_permissions_save(code: str, keys: List[str]) -> dict:
 
 def all_permissions() -> dict:
     groups = [
-        {"name": "人员管理", "keys": ["person:view", "person:add", "person:edit", "person:delete", "person:import", "person:batch_status"]},
+        {"name": "人员管理", "keys": ["person:view", "person:add", "person:edit", "person:delete", "person:export", "person:import", "person:batch_status"]},
         {"name": "合同管理", "keys": ["contract:view", "contract:add", "contract:edit"]},
         {"name": "结算管理", "keys": ["settlement:view", "settlement:generate", "settlement:confirm"]},
         {"name": "考勤管理", "keys": ["attendance:view", "attendance:import", "attendance:log"]},

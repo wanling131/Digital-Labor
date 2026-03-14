@@ -57,7 +57,11 @@ def archive_export(request: Request):
     """
     人员档案导出（CSV），复用当前筛选条件。
     为避免一次性加载过大数据，这里简单限制最多导出 10000 条。
+    需要 person:export 权限。
     """
+    resp = require_permission(request, "person:export")
+    if resp is not None:
+        return resp
     q = dict(request.query_params)
     u = get_user(request) or {}
     actor_org_id = None

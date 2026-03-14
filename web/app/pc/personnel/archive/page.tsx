@@ -326,6 +326,7 @@ export default function PersonnelArchivePage() {
 
   const resetImportState = () => {
     setSelectedFile(null)
+    setImportDefaultJobTitle("")
     setImportError(null)
     setImportSuccess(null)
     setImportErrors([])
@@ -488,10 +489,12 @@ export default function PersonnelArchivePage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-          <Button variant="outline" className="gap-2" onClick={handleExport}>
-            <Download className="h-4 w-4" />
-            导出数据
-          </Button>
+          {hasPermission("person:export") && (
+            <Button variant="outline" className="gap-2" onClick={handleExport}>
+              <Download className="h-4 w-4" />
+              导出数据
+            </Button>
+          )}
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
               <Button className="gap-2">

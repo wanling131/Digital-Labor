@@ -161,7 +161,7 @@ export async function downloadContractPdf(contractId: string, useWorkerToken = f
   })
   if (res.status === 404) {
     const data = await res.json().catch(() => ({}))
-    return { ok: false, message: (data as { noFile?: boolean; message?: string }).noFile ? '暂无 PDF 文件，对接电子签后可下载' : (data as { message?: string }).message ?? '合同不存在' }
+    return { ok: false, message: (data as { noFile?: boolean; message?: string }).noFile ? '暂无 PDF 文件。请联系管理员获取合同文件，或待系统对接电子签后即可下载。' : (data as { message?: string }).message ?? '合同不存在' }
   }
   if (res.status === 403) return { ok: false, message: '无权查看该合同' }
   if (!res.ok) return { ok: false, message: res.statusText }
