@@ -67,6 +67,37 @@ def _decode_image(image_base64: str) -> Optional[bytes]:
         return None
 
 
+def detect_liveness(image_base64: str) -> Tuple[bool, str]:
+    """
+    调用阿里云人脸活体检测（DetectLivingFace）。
+    为了保持鲁棒性，这里采用保守策略：
+    - 调用成功则视为通过；
+    - 网络错误/配置错误等异常则视为未通过，并记录日志。
+    后续如需根据具体得分做阈值判断，可在解析 resp.body.data 时增加逻辑。
+    """
+    client = _get_client()
+    if not client:
+        return False, "活体检测服务未配置"
+    image_bytes = _decode_image(image_base64)
+    if not image_bytes:
+        return False, "图片格式无效"
+    try:
+        from alibabacloud_facebody20191230.models import (
+            DetectLivingFaceAdvanceRequest,
+            DetectLivingFaceAdvanceRequestTasks,
+        )
+        from alibabacloud_tea_util.models import RuntimeOptions
+
+        task = DetectLivingFaceAdvanceRequestTasks(image_urlobject=io.BytesIO(image_bytes))
+        req = DetectLivingFaceAdvanceRequest(tasks=[task])
+        client.detect_living_face_advance(req, RuntimeOptions())
+        # 不细分分数，调用成功即认为活体检测通过
+        return True, "活体检测通过"
+    except Exception as e:
+        logger.warning("DetectLivingFace failed: %s", e)
+        return False, "活体检测失败"
+
+
 def ensure_face_db(db_name: Optional[str] = None) -> bool:
     """确保人脸库存在；不存在则创建。库名仅支持小写字母、数字、下划线，1~64 位。"""
     db_name = (db_name or settings.aliyun_face_db_name).strip()

@@ -17,6 +17,7 @@ from digital_labor.services.aliyun_face_service import (
     enroll_person as aliyun_enroll_person,
     is_available as aliyun_face_available,
     verify_person as aliyun_verify_person,
+    detect_liveness as aliyun_detect_liveness,
 )
 from digital_labor.services.person_service import (
     Page,
@@ -392,8 +393,18 @@ def _handle_face_verify_common(person_id: Optional[int], body: FaceVerifyBody):
     if not person_id:
         return err(400, "person_id 必填")
 
-    # 活体模式 + 已配置阿里云人脸 1:N：走真实录入/核验
+    # 活体模式 + 已配置阿里云人脸 1:N：先活体检测，再 1:N 录入/核验
     if body.mode == "living" and body.image and aliyun_face_available():
+        ok_live, live_msg = aliyun_detect_liveness(body.image)
+        if not ok_live:
+            return ok(
+                {
+                    "ok": True,
+                    "passed": False,
+                    "message": live_msg or "活体检测未通过",
+                    "details": {"mode": body.mode, "step": "liveness"},
+                }
+            )
         status = svc_face_verify_status(person_id)
         face_verified = status.get("face_verified", False) if status else False
         if not face_verified:
