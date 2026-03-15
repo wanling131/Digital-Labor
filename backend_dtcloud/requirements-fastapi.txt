@@ -4,6 +4,7 @@ PyJWT>=2.8.0
 psycopg[binary]>=3.1.18
 SQLAlchemy>=2.0.25
 cryptography>=42.0.0
+bcrypt>=4.0.0
 openpyxl>=3.1.2
 xlrd>=2.0.1
 requests>=2.31.0
@@ -12,3 +13,7 @@ requests>=2.31.0
 uvicorn>=0.27.0,<0.42
 fastapi>=0.110.0,<0.111
 python-multipart>=0.0.6
+
+# 阿里云视觉智能开放平台 - 人脸 1:N（创建库、添加样本、添加人脸、搜索）
+alibabacloud_facebody20191230>=3.0.0
+alibabacloud_tea_openapi>=0.3.0

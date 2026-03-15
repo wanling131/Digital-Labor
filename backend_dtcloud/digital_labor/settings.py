@@ -36,6 +36,21 @@ class Settings:
     # P2 系统嵌入：API 路由前缀，如 /labor 使接口变为 /labor/api/auth 等
     labor_api_prefix: str = os.getenv("LABOR_API_PREFIX", "").rstrip("/")
 
+    # 阿里云人脸 1:N（视觉智能开放平台 facebody）
+    # 使用 ALIBABA_CLOUD_ACCESS_KEY_ID / ALIBABA_CLOUD_ACCESS_KEY_SECRET，与阿里云文档一致；
+    # 也可使用 ALIYUN_ACCESS_KEY_ID / ALIYUN_ACCESS_KEY_SECRET 兼容旧配置
+    aliyun_access_key_id: str = (
+        os.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID") or os.getenv("ALIYUN_ACCESS_KEY_ID") or ""
+    )
+    aliyun_access_key_secret: str = (
+        os.getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET") or os.getenv("ALIYUN_ACCESS_KEY_SECRET") or ""
+    )
+    aliyun_face_db_name: str = os.getenv("ALIYUN_FACE_DB_NAME", "digital_labor_face")
+    # 人脸搜索置信度阈值 0~100，文档建议 60.48/67.87/72.62 对应不同误识率
+    aliyun_face_confidence_threshold: float = float(
+        os.getenv("ALIYUN_FACE_CONFIDENCE_THRESHOLD", "60.48")
+    )
+
 
 settings = Settings()
 

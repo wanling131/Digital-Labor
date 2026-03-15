@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import os
-
-
 def feature_status_payload() -> dict:
-    # 兼容 Node：配置 ALIYUN_ACCESS_KEY_* 则标记为 aliyun，否则 mock
-    face_verify = "aliyun" if os.getenv("ALIYUN_ACCESS_KEY_ID") and os.getenv("ALIYUN_ACCESS_KEY_SECRET") else "mock"
+    # 阿里云人脸 1:N 可用（AccessKey 已配置且 SDK 正常）则返回 aliyun，否则 mock
+    try:
+        from digital_labor.services.aliyun_face_service import is_available
+        face_verify = "aliyun" if is_available() else "mock"
+    except Exception:
+        face_verify = "mock"
     return {"faceVerify": face_verify}
 

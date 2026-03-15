@@ -13,6 +13,11 @@ from sqlalchemy import text
 from digital_labor.crypto_compat import safe_decrypt_then_mask
 from digital_labor.db import get_engine
 from digital_labor.pagination import parse_pagination
+from digital_labor.services.aliyun_face_service import (
+    enroll_person as aliyun_enroll_person,
+    is_available as aliyun_face_available,
+    verify_person as aliyun_verify_person,
+)
 from digital_labor.services.person_service import (
     Page,
     archive_create as svc_archive_create,
@@ -387,7 +392,46 @@ def _handle_face_verify_common(person_id: Optional[int], body: FaceVerifyBody):
     if not person_id:
         return err(400, "person_id 必填")
 
-    # 当前环境未接入外部厂商，统一走 mock，通过则直接标记人员已通过人脸认证
+    # 活体模式 + 已配置阿里云人脸 1:N：走真实录入/核验
+    if body.mode == "living" and body.image and aliyun_face_available():
+        status = svc_face_verify_status(person_id)
+        face_verified = status.get("face_verified", False) if status else False
+        if not face_verified:
+            # 首次：录入人脸到阿里云库，成功后标记已认证
+            ok_enroll, msg = aliyun_enroll_person(person_id, body.image)
+            if not ok_enroll:
+                return err(400, msg)
+            svc_face_verify_mark_passed(person_id)
+            return ok(
+                {
+                    "ok": True,
+                    "passed": True,
+                    "message": msg,
+                    "details": {"mode": body.mode, "enroll": True},
+                }
+            )
+        # 已录入过：1:N 搜索核验
+        ok_verify, msg = aliyun_verify_person(person_id, body.image)
+        if not ok_verify:
+            return ok(
+                {
+                    "ok": False,
+                    "passed": False,
+                    "message": msg,
+                    "details": {"mode": body.mode},
+                }
+            )
+        svc_face_verify_mark_passed(person_id)
+        return ok(
+            {
+                "ok": True,
+                "passed": True,
+                "message": msg,
+                "details": {"mode": body.mode},
+            }
+        )
+
+    # 未配置阿里云或非 living 模式：保持 mock，通过则直接标记
     passed = True
     svc_face_verify_mark_passed(person_id)
     return ok(
