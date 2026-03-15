@@ -13,6 +13,7 @@ from digital_labor.services.site_service import equipment_update as svc_equipmen
 from digital_labor.services.site_service import leave as svc_leave
 from digital_labor.services.site_service import site_log_create as svc_site_log_create
 from digital_labor.services.site_service import site_log_list as svc_site_log_list
+from digital_labor.web.middleware import require_permission
 from digital_labor.web.response import err, ok
 
 
@@ -24,7 +25,13 @@ class LeaveBody(BaseModel):
 
 
 @router.post("/leave")
-def leave(body: LeaveBody):
+def leave(request: Request, body: LeaveBody):
+    """
+    离场登记：仅允许具有现场编辑权限的管理端用户操作。
+    """
+    resp = require_permission(request, "site:edit")
+    if resp is not None:
+        return resp
     if not body.person_id:
         return err(400, "person_id 必填")
     return ok(svc_leave(body.person_id))

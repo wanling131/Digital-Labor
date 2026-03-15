@@ -47,9 +47,12 @@ class Settings:
     )
     aliyun_face_db_name: str = os.getenv("ALIYUN_FACE_DB_NAME", "digital_labor_face")
     # 人脸搜索置信度阈值 0~100，文档建议 60.48/67.87/72.62 对应不同误识率
-    aliyun_face_confidence_threshold: float = float(
-        os.getenv("ALIYUN_FACE_CONFIDENCE_THRESHOLD", "60.48")
-    )
+    try:
+        _aliyun_face_threshold_raw = os.getenv("ALIYUN_FACE_CONFIDENCE_THRESHOLD", "60.48")
+        aliyun_face_confidence_threshold: float = float(_aliyun_face_threshold_raw)
+    except ValueError:
+        # 环境变量配置错误时回退到安全默认值，避免应用在导入阶段崩溃
+        aliyun_face_confidence_threshold = 60.48
 
 
 settings = Settings()

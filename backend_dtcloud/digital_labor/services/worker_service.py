@@ -81,7 +81,8 @@ def change_password(worker_id: int, old_password: str, new_password: str) -> str
         ).mappings().first()
     if not row:
         return "bad_old_password"
-    current = (row.get("password_hash") or "").strip()
+    row_dict = dict(row)
+    current = (row_dict.get("password_hash") or "").strip()
     if current:
         if not verify_password(str(old_password or ""), current):
             return "bad_old_password"
@@ -104,10 +105,13 @@ def bind_mobile(worker_id: int, mobile: str, verify_code: Optional[str] = None) 
         raise ValueError("手机号不能为空")
     engine = get_engine()
     with engine.begin() as conn:
-        conn.execute(
+        result = conn.execute(
             text("UPDATE person SET mobile = :m, updated_at = CURRENT_TIMESTAMP WHERE id = :id"),
             {"m": encrypt(mobile_s), "id": worker_id},
         )
+        if result.rowcount == 0:
+            # 正常情况下 worker_id 来自登录态，应当存在。若不存在说明账号已被删除或失效。
+            raise ValueError("人员不存在或已被删除")
 
 
 def get_notification_settings(worker_id: int) -> dict:
@@ -120,7 +124,8 @@ def get_notification_settings(worker_id: int) -> dict:
         ).mappings().first()
     if not row:
         return {"push_enabled": True}
-    return {"push_enabled": bool(row.get("push_enabled", 1))}
+    row_dict = dict(row)
+    return {"push_enabled": bool(row_dict.get("push_enabled", 1))}
 
 
 def update_notification_settings(worker_id: int, push_enabled: bool) -> None:

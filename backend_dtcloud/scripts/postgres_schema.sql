@@ -60,6 +60,8 @@ CREATE TABLE IF NOT EXISTS attendance (
   clock_in TEXT,
   clock_out TEXT,
   hours DOUBLE PRECISION DEFAULT 0,
+  standard_hours DOUBLE PRECISION DEFAULT 0,
+  overtime_hours DOUBLE PRECISION DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT now(),
   CONSTRAINT uq_attendance_person_date UNIQUE(person_id, work_date)
 );

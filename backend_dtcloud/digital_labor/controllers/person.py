@@ -397,13 +397,10 @@ def _handle_face_verify_common(person_id: Optional[int], body: FaceVerifyBody):
     if body.mode == "living" and body.image and aliyun_face_available():
         ok_live, live_msg = aliyun_detect_liveness(body.image)
         if not ok_live:
-            return ok(
-                {
-                    "ok": True,
-                    "passed": False,
-                    "message": live_msg or "活体检测未通过",
-                    "details": {"mode": body.mode, "step": "liveness"},
-                }
+            return err(
+                400,
+                live_msg or "活体检测未通过",
+                details={"mode": body.mode, "step": "liveness"},
             )
         status = svc_face_verify_status(person_id)
         face_verified = status.get("face_verified", False) if status else False
@@ -411,7 +408,11 @@ def _handle_face_verify_common(person_id: Optional[int], body: FaceVerifyBody):
             # 首次：录入人脸到阿里云库，成功后标记已认证
             ok_enroll, msg = aliyun_enroll_person(person_id, body.image)
             if not ok_enroll:
-                return err(400, msg)
+                return err(
+                    400,
+                    msg or "人脸录入失败",
+                    details={"mode": body.mode, "step": "enroll"},
+                )
             svc_face_verify_mark_passed(person_id)
             return ok(
                 {
@@ -424,13 +425,10 @@ def _handle_face_verify_common(person_id: Optional[int], body: FaceVerifyBody):
         # 已录入过：1:N 搜索核验
         ok_verify, msg = aliyun_verify_person(person_id, body.image)
         if not ok_verify:
-            return ok(
-                {
-                    "ok": False,
-                    "passed": False,
-                    "message": msg,
-                    "details": {"mode": body.mode},
-                }
+            return err(
+                400,
+                msg or "人脸比对未通过",
+                details={"mode": body.mode},
             )
         svc_face_verify_mark_passed(person_id)
         return ok(
@@ -456,14 +454,27 @@ def _handle_face_verify_common(person_id: Optional[int], body: FaceVerifyBody):
 
 
 @router.post("/face-verify")
-def face_verify(body: FaceVerifyBody):
-    # 无路径 ID 时，优先使用 body.person_id 兼容旧调用方式
-    return _handle_face_verify_common(body.person_id, body)
+def face_verify(request: Request, body: FaceVerifyBody):
+    """
+    工人端人脸验证：仅允许当前登录工人操作自己的记录。
+    - person_id 不再信任 body 中传入的值，而是统一使用 token 中的 workerId。
+    """
+    resp = require_worker(request)
+    if resp is not None:
+        return resp
+    worker_id = int(request.state.user["workerId"])
+    return _handle_face_verify_common(worker_id, body)
 
 
 @router.post("/{person_id}/face-verify")
-def face_verify_for_person(person_id: int, body: FaceVerifyBody):
-    # 兼容 Node 端路径形式：/api/person/:id/face-verify
+def face_verify_for_person(request: Request, person_id: int, body: FaceVerifyBody):
+    """
+    管理端为指定人员触发人脸验证（如人工辅助录入）。
+    需要具备人员编辑权限。
+    """
+    resp = require_permission(request, "person:edit")
+    if resp is not None:
+        return resp
     return _handle_face_verify_common(person_id, body)
 
 

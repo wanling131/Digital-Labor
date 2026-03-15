@@ -64,6 +64,8 @@ CREATE TABLE IF NOT EXISTS attendance (
   clock_in TEXT,
   clock_out TEXT,
   hours REAL DEFAULT 0,
+   standard_hours REAL DEFAULT 0,
+   overtime_hours REAL DEFAULT 0,
   created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
   UNIQUE(person_id, work_date)
 );
