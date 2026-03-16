@@ -163,8 +163,8 @@ def board_trend_payload(days: int) -> dict:
         date_expr_person = "DATE(created_at)" if is_sqlite else "created_at::date"
         date_expr_signed = "DATE(signed_at)" if is_sqlite else "signed_at::date"
         date_expr_att = "DATE(work_date)" if is_sqlite else "work_date"
-        start_cmp = "DATE(:s)" if is_sqlite else ":s::date"
-        end_cmp = "DATE(:e)" if is_sqlite else ":e::date"
+        start_cmp = "DATE(:s)" if is_sqlite else "CAST(:s AS date)"
+        end_cmp = "DATE(:e)" if is_sqlite else "CAST(:e AS date)"
 
         daily_person = conn.execute(
             text(
