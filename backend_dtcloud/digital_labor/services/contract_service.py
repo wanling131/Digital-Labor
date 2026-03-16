@@ -235,7 +235,7 @@ def template_upload_save(*, filename: str, content: bytes, name: Optional[str]) 
     abs_path = os.path.join(paths.uploads_templates, stored)
     with open(abs_path, "wb") as f:
         f.write(content)
-    rel = os.path.relpath(abs_path, paths.server_root).replace("\\", "/")
+    rel = os.path.relpath(abs_path, paths.workspace_root).replace("\\", "/")
     tpl_name = (name or "").strip() or filename or "未命名模板"
     engine = get_engine()
     with engine.begin() as conn:
@@ -257,7 +257,7 @@ def template_file_path(template_id: int) -> Optional[str]:
     if not row or not row.get("file_path"):
         return None
     paths = get_paths()
-    abs_path = os.path.abspath(os.path.join(paths.server_root, str(row["file_path"])))
+    abs_path = os.path.abspath(os.path.join(paths.workspace_root, str(row["file_path"])))
     if not abs_path.startswith(os.path.abspath(paths.uploads_templates)) or not os.path.exists(abs_path):
         return None
     return abs_path
