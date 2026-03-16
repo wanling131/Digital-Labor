@@ -28,13 +28,14 @@ export function ContractEditor({
 }: ContractEditorProps) {
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const tinymceRef = useRef<any>(null);
-  const [editorId, setEditorId] = useState<string>("");
+  const [editorId, setEditorId] = useState<string>('');
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
+    let script: HTMLScriptElement | null = null;
     // 动态加载TinyMCE脚本
     if (typeof window !== 'undefined' && !window.tinymce) {
-      const script = document.createElement('script');
+      script = document.createElement('script');
       script.src = 'https://cdn.tiny.cloud/1/no-api-key/tinymce/6/tinymce.min.js';
       script.async = true;
       script.onload = () => {
@@ -52,6 +53,10 @@ export function ContractEditor({
       if (typeof window !== 'undefined' && window.tinymce && tinymceRef.current) {
         window.tinymce.remove(tinymceRef.current);
       }
+      // 清理动态创建的script元素
+      if (script && typeof window !== 'undefined') {
+        document.head.removeChild(script);
+      }
     };
   }, []);
 
@@ -63,7 +68,7 @@ export function ContractEditor({
 
   useEffect(() => {
     if (!editorId && typeof window !== 'undefined') {
-      const id = typeof crypto !== "undefined" && "randomUUID" in crypto
+      const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
         ? `contract-editor-${crypto.randomUUID()}`
         : `contract-editor-${Math.random().toString(36).substr(2, 9)}`;
       setEditorId(id);
