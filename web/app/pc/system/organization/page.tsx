@@ -73,7 +73,7 @@ const typeConfig = {
   team: { label: "班组", color: "bg-chart-4 text-foreground" },
 }
 
-function OrgTreeNode({ node, level = 0 }: { node: OrgNode; level?: number }) {
+function OrgTreeNode({ node, level = 0, onDelete, onAddChild }: { node: OrgNode; level?: number; onDelete: (id: string) => void; onAddChild: (parentId: string) => void }) {
   const [expanded, setExpanded] = useState(node.expanded ?? false)
   const hasChildren = node.children && node.children.length > 0
   const config = typeConfig[node.type]
@@ -118,11 +118,11 @@ function OrgTreeNode({ node, level = 0 }: { node: OrgNode; level?: number }) {
               <Edit className="h-4 w-4 mr-2" />
               编辑
             </DropdownMenuItem>
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onAddChild(node.id)}>
               <Plus className="h-4 w-4 mr-2" />
               添加下级
             </DropdownMenuItem>
-            <DropdownMenuItem className="text-destructive">
+            <DropdownMenuItem className="text-destructive" onClick={() => onDelete(node.id)}>
               <Trash2 className="h-4 w-4 mr-2" />
               删除
             </DropdownMenuItem>
@@ -144,6 +144,15 @@ export default function OrganizationPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [orgTree, setOrgTree] = useState<OrgNode[]>([])
   const [loading, setLoading] = useState(true)
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [isAddChildOpen, setIsAddChildOpen] = useState(false)
+  const [newOrg, setNewOrg] = useState({
+    name: "",
+    type: "company" as OrgNode["type"],
+    parentId: "root",
+    manager: ""
+  })
+  const [currentParentId, setCurrentParentId] = useState("root")
 
   const loadOrg = useCallback(async () => {
     try {
@@ -155,6 +164,83 @@ export default function OrganizationPage() {
       setLoading(false)
     }
   }, [])
+
+  const createOrg = useCallback(async () => {
+    if (!newOrg.name) return
+    try {
+      await api("/api/sys/org", {
+        method: "POST",
+        body: {
+          parent_id: newOrg.parentId === "root" ? 0 : parseInt(newOrg.parentId),
+          name: newOrg.name,
+          type: newOrg.type,
+          manager: newOrg.manager
+        }
+      })
+      // Reset form
+      setNewOrg({
+        name: "",
+        type: "company",
+        parentId: "root",
+        manager: ""
+      })
+      // Close dialog
+      setIsCreateOpen(false)
+      // Reload org tree
+      loadOrg()
+    } catch (error) {
+      console.error("创建组织失败:", error)
+    }
+  }, [newOrg, loadOrg])
+
+  const deleteOrg = useCallback(async (id: string) => {
+    if (!confirm("确定删除该组织？若有子节点需先删除子节点。")) return
+    try {
+      await api(`/api/sys/org/${id}`, { method: "DELETE" })
+      loadOrg()
+    } catch (error) {
+      console.error("删除组织失败:", error)
+    }
+  }, [loadOrg])
+
+  const openAddChild = useCallback((parentId: string) => {
+    setCurrentParentId(parentId)
+    setNewOrg({
+      name: "",
+      type: "department",
+      parentId: parentId,
+      manager: ""
+    })
+    setIsAddChildOpen(true)
+  }, [])
+
+  const addChildOrg = useCallback(async () => {
+    if (!newOrg.name) return
+    try {
+      await api("/api/sys/org", {
+        method: "POST",
+        body: {
+          parent_id: newOrg.parentId === "root" ? 0 : parseInt(newOrg.parentId),
+          name: newOrg.name,
+          type: newOrg.type,
+          manager: newOrg.manager
+        }
+      })
+      // Reset form
+      setNewOrg({
+        name: "",
+        type: "company",
+        parentId: "root",
+        manager: ""
+      })
+      // Close dialog
+      setIsAddChildOpen(false)
+      // Reload org tree
+      loadOrg()
+    } catch (error) {
+      console.error("创建组织失败:", error)
+    }
+  }, [newOrg, loadOrg])
 
   useEffect(() => {
     loadOrg()
@@ -179,7 +265,7 @@ export default function OrganizationPage() {
           <h1 className="text-2xl font-bold tracking-tight">组织架构管理</h1>
           <p className="text-muted-foreground">管理公司、分公司、项目部和班组的层级结构</p>
         </div>
-        <Dialog>
+        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogTrigger asChild>
             <Button>
               <Plus className="h-4 w-4 mr-2" />
@@ -194,11 +280,18 @@ export default function OrganizationPage() {
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
                 <Label>组织名称</Label>
-                <Input placeholder="请输入组织名称" />
+                <Input 
+                  placeholder="请输入组织名称" 
+                  value={newOrg.name}
+                  onChange={(e) => setNewOrg({ ...newOrg, name: e.target.value })}
+                />
               </div>
               <div className="grid gap-2">
                 <Label>组织类型</Label>
-                <Select>
+                <Select 
+                  value={newOrg.type}
+                  onValueChange={(value) => setNewOrg({ ...newOrg, type: value as OrgNode["type"] })}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="选择组织类型" />
                   </SelectTrigger>
@@ -212,7 +305,10 @@ export default function OrganizationPage() {
               </div>
               <div className="grid gap-2">
                 <Label>上级组织</Label>
-                <Select>
+                <Select 
+                  value={newOrg.parentId}
+                  onValueChange={(value) => setNewOrg({ ...newOrg, parentId: value })}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="选择上级组织" />
                   </SelectTrigger>
@@ -226,12 +322,64 @@ export default function OrganizationPage() {
               </div>
               <div className="grid gap-2">
                 <Label>负责人</Label>
-                <Input placeholder="请输入负责人姓名" />
+                <Input 
+                  placeholder="请输入负责人姓名" 
+                  value={newOrg.manager}
+                  onChange={(e) => setNewOrg({ ...newOrg, manager: e.target.value })}
+                />
               </div>
             </div>
             <DialogFooter>
               <Button variant="outline">取消</Button>
-              <Button>确认创建</Button>
+              <Button onClick={createOrg}>确认创建</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={isAddChildOpen} onOpenChange={setIsAddChildOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>添加下级组织</DialogTitle>
+              <DialogDescription>为当前组织添加下级组织节点</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label>组织名称</Label>
+                <Input 
+                  placeholder="请输入组织名称" 
+                  value={newOrg.name}
+                  onChange={(e) => setNewOrg({ ...newOrg, name: e.target.value })}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>组织类型</Label>
+                <Select 
+                  value={newOrg.type}
+                  onValueChange={(value) => setNewOrg({ ...newOrg, type: value as OrgNode["type"] })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="选择组织类型" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="company">公司</SelectItem>
+                    <SelectItem value="department">分公司</SelectItem>
+                    <SelectItem value="project">项目部</SelectItem>
+                    <SelectItem value="team">班组</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>负责人</Label>
+                <Input 
+                  placeholder="请输入负责人姓名" 
+                  value={newOrg.manager}
+                  onChange={(e) => setNewOrg({ ...newOrg, manager: e.target.value })}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsAddChildOpen(false)}>取消</Button>
+              <Button onClick={addChildOrg}>确认创建</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -306,7 +454,7 @@ export default function OrganizationPage() {
               <p className="text-sm text-muted-foreground py-4 text-center">暂无组织数据，请先执行种子或创建组织</p>
             ) : (
               orgTree.map((node) => (
-                <OrgTreeNode key={node.id} node={node} />
+                <OrgTreeNode key={node.id} node={node} onDelete={deleteOrg} onAddChild={openAddChild} />
               ))
             )}
           </div>
