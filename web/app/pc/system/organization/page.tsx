@@ -132,7 +132,7 @@ function OrgTreeNode({ node, level = 0, onDelete, onAddChild }: { node: OrgNode;
       {expanded && hasChildren && (
         <div>
           {node.children!.map((child) => (
-            <OrgTreeNode key={child.id} node={child} level={level + 1} />
+            <OrgTreeNode key={child.id} node={child} level={level + 1} onDelete={onDelete} onAddChild={onAddChild} />
           ))}
         </div>
       )}
@@ -157,7 +157,7 @@ export default function OrganizationPage() {
   const loadOrg = useCallback(async () => {
     try {
       const { tree } = await api<{ tree: unknown[] }>("/api/sys/org")
-      setOrgTree((tree || []).map((n: { id: number; name: string; type: string; manager?: string; memberCount: number; children?: unknown[] }) => mapApiTree(n)))
+      setOrgTree((tree || []).map((n) => mapApiTree(n as { id: number; name: string; type: string; manager?: string; memberCount: number; children?: unknown[] })))
     } catch {
       setOrgTree([])
     } finally {
