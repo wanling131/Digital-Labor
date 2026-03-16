@@ -26,6 +26,18 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   )
 `)
+
+// 工种配置：支持层级结构
+db.exec(`
+  CREATE TABLE IF NOT EXISTS job_title (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    parent_id INTEGER DEFAULT NULL,
+    code TEXT,
+    name TEXT NOT NULL,
+    sort INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  )
+`)
 ;(function addManagerColumn() {
   const cols = db.prepare("PRAGMA table_info(org)").all()
   if (cols.some((c) => c.name === 'manager')) return

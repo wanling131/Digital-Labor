@@ -81,6 +81,49 @@ router.delete('/org/:id', (req, res) => {
   res.json({ ok: true })
 })
 
+// 工种配置管理
+router.get('/job-title-config', (_, res) => {
+  const rows = db.prepare('SELECT id, parent_id, code, name, sort FROM job_title ORDER BY sort, id').all()
+  function buildTree(rows, parentId = null) {
+    return rows.filter(r => r.parent_id === parentId).map(r => ({
+      ...r,
+      children: buildTree(rows, r.id)
+    }))
+  }
+  const list = buildTree(rows)
+  const flat = rows.map(r => r.name)
+  res.json({ list, flat })
+})
+
+router.post('/job-title-config', (req, res) => {
+  const { code, name, parent_id = null, sort = 0 } = req.body || {}
+  if (!name) return res.status(400).json({ message: 'name 必填' })
+  const r = db.prepare('INSERT INTO job_title (parent_id, code, name, sort) VALUES (?, ?, ?, ?)').run(parent_id, code, name, sort)
+  res.json({ id: r.lastInsertRowid })
+})
+
+router.put('/job-title-config/:id', (req, res) => {
+  const { id } = req.params
+  const { code, name, parent_id, sort } = req.body || {}
+  const updates = []
+  const values = []
+  if (code !== undefined) { updates.push('code = ?'); values.push(code) }
+  if (name !== undefined) { updates.push('name = ?'); values.push(name) }
+  if (parent_id !== undefined) { updates.push('parent_id = ?'); values.push(parent_id) }
+  if (sort !== undefined) { updates.push('sort = ?'); values.push(sort) }
+  if (updates.length === 0) return res.status(400).json({ message: '无有效字段' })
+  values.push(id)
+  db.prepare(`UPDATE job_title SET ${updates.join(', ')} WHERE id = ?`).run(...values)
+  res.json({ ok: true })
+})
+
+router.delete('/job-title-config/:id', (req, res) => {
+  const hasChild = db.prepare('SELECT 1 FROM job_title WHERE parent_id = ?').get(req.params.id)
+  if (hasChild) return res.status(400).json({ message: '请先删除子节点' })
+  db.prepare('DELETE FROM job_title WHERE id = ?').run(req.params.id)
+  res.json({ ok: true })
+})
+
 router.get('/user', (_, res) => {
   const list = db.prepare(`
     SELECT u.id, u.username, u.name, u.org_id, u.role, u.enabled, u.created_at, o.name as org_name
