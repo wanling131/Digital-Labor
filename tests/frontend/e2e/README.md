@@ -11,7 +11,7 @@
 
 1. **先启动后端**（另开终端）：
    ```bash
-   cd server && npm start
+   cd backend_dtcloud && python -m digital_labor.run
    ```
 
 2. **在 web 目录执行**：
