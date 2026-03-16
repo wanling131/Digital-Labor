@@ -54,6 +54,9 @@ class Settings:
         # 环境变量配置错误时回退到安全默认值，避免应用在导入阶段崩溃
         aliyun_face_confidence_threshold = 60.48
 
+    # Redis 缓存配置
+    redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
 
 settings = Settings()
 

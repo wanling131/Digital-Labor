@@ -9,6 +9,7 @@ openpyxl>=3.1.2
 pymupdf>=1.24.0
 xlrd>=2.0.1
 requests>=2.31.0
+redis>=5.0.0
 
 # 为确保 Python 3.8 可用，避免安装到后续可能移除 3.8 支持的版本
 uvicorn>=0.27.0,<0.42
