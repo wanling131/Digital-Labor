@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import Image from 'next/image'
 import {
   Select,
   SelectContent,
@@ -260,7 +261,7 @@ export default function RealtimePage() {
                 <CardContent className="pt-4">
                   <div className="flex items-start gap-3">
                     <Avatar className="h-10 w-10">
-                      <AvatarImage src={`/placeholder-${worker.id}.jpg`} />
+                      <AvatarImage src="/placeholder-user.jpg" />
                       <AvatarFallback className="bg-primary/10 text-primary text-sm">
                         {worker.name.slice(0, 1)}
                       </AvatarFallback>

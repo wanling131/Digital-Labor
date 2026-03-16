@@ -1,11 +1,23 @@
 from __future__ import annotations
 
 import datetime as dt
+import time
 from typing import Any, Dict
 
 from sqlalchemy import text
 
 from digital_labor.db import get_engine
+
+from digital_labor.utils.cache import get_cache, set_cache, invalidate_cache
+
+# 缓存过期时间（秒）
+_CACHE_TTL = 60
+
+
+# 使用通用缓存工具
+_get_cache = get_cache
+_set_cache = set_cache
+_invalidate_cache = invalidate_cache
 
 
 def board_payload() -> dict:
@@ -123,7 +135,7 @@ def board_payload() -> dict:
     def rate(n: int) -> str:
         return f"{(n / total * 100):.1f}" if total else "0"
 
-    return {
+    result = {
         "total": total,
         "realNameRate": rate(real_name),
         "signRate": rate(signed),
@@ -145,9 +157,19 @@ def board_payload() -> dict:
             {"title": "考勤异常待处理", "count": 0, "urgent": True},
         ],
     }
+    # 缓存结果
+    cache_key = "board:payload"
+    _set_cache(cache_key, result)
+    return result
 
 
 def board_trend_payload(days: int) -> dict:
+    # 尝试从缓存获取
+    cache_key = f"board:trend:{days}"
+    cached_result = _get_cache(cache_key)
+    if cached_result:
+        return cached_result
+    
     if days < 7:
         days = 7
     if days > 90:
@@ -223,5 +245,9 @@ def board_trend_payload(days: int) -> dict:
             by_date[str(r["date"])]["totalHours"] = float(r["total_hours"] or 0)
 
     trend = [by_date[k] for k in sorted(by_date.keys())]
-    return {"trend": trend, "start": start_str, "end": end_str}
+    result = {"trend": trend, "start": start_str, "end": end_str}
+    # 缓存结果
+    cache_key = f"board:trend:{days}"
+    _set_cache(cache_key, result)
+    return result
 

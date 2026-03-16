@@ -15,23 +15,18 @@ from digital_labor.db import get_engine
 from digital_labor.paths import get_paths
 
 
+from digital_labor.utils.cache import get_cache, set_cache
+
 _JOB_TITLES_CACHE_TTL_SECONDS = 60
-_job_titles_cache: Dict[str, tuple[float, dict]] = {}
 
 
+# 使用通用缓存工具
 def _job_titles_cache_get(key: str) -> Optional[dict]:
-    v = _job_titles_cache.get(key)
-    if not v:
-        return None
-    exp, data = v
-    if exp < time.time():
-        _job_titles_cache.pop(key, None)
-        return None
-    return data
+    return get_cache(key)
 
 
 def _job_titles_cache_set(key: str, data: dict, ttl: int = _JOB_TITLES_CACHE_TTL_SECONDS) -> None:
-    _job_titles_cache[key] = (time.time() + ttl, data)
+    set_cache(key, data, ttl)
 
 
 @dataclass(frozen=True)
@@ -89,8 +84,22 @@ def archive_list(
         where.append("p.status = :status")
         params["status"] = status
     if org_id:
-        where.append("p.org_id = :org_id")
-        params["org_id"] = int(org_id)
+        # 实现基于组织树的数据范围控制
+        engine = get_engine()
+        with engine.connect() as conn:
+            # 获取组织及其所有子组织的ID
+            rows = conn.execute(
+                text('''WITH RECURSIVE org_hierarchy(id) AS (
+                    SELECT id FROM org WHERE id = :org_id
+                    UNION ALL
+                    SELECT o.id FROM org o JOIN org_hierarchy oh ON o.parent_id = oh.id
+                ) SELECT id FROM org_hierarchy'''),
+                {"org_id": int(org_id)}
+            ).scalars().all()
+            org_ids = [int(row) for row in rows]
+            if org_ids:
+                where.append("p.org_id IN :org_ids")
+                params["org_ids"] = org_ids
     if on_site == "1":
         where.append("p.on_site = 1")
     if on_site == "0":
@@ -110,25 +119,20 @@ def archive_list(
         where.append("(LOWER(p.name) LIKE LOWER(:kw) OR LOWER(p.work_no) LIKE LOWER(:kw) OR LOWER(o.name) LIKE LOWER(:kw))")
         params["kw"] = f"%{keyword}%"
 
-    where_sql = (" AND " + " AND ".join(where)) if where else ""
+    where_clause = " AND " + " AND ".join(where) if where else ""
     engine = get_engine()
     with engine.connect() as conn:
-        total = conn.execute(
-            text(f"SELECT COUNT(*) FROM person p LEFT JOIN org o ON p.org_id = o.id WHERE 1=1{where_sql}"),
-            params,
-        ).scalar_one()
-        rows = conn.execute(
-            text(
-                f"""
-                SELECT p.*, o.name as org_name
-                FROM person p LEFT JOIN org o ON p.org_id = o.id
-                WHERE 1=1{where_sql}
-                ORDER BY p.id DESC
-                LIMIT :limit OFFSET :offset
-                """
-            ),
-            params,
-        ).mappings().all()
+        total_query = text("SELECT COUNT(*) FROM person p LEFT JOIN org o ON p.org_id = o.id WHERE 1=1" + where_clause)
+        total = conn.execute(total_query, params).scalar_one()
+        rows_query = text(
+            """
+            SELECT p.*, o.name as org_name
+            FROM person p LEFT JOIN org o ON p.org_id = o.id
+            WHERE 1=1"""
+            + where_clause + 
+            " ORDER BY p.id DESC LIMIT :limit OFFSET :offset"
+        )
+        rows = conn.execute(rows_query, params).mappings().all()
 
     out = []
     for r in rows:
@@ -250,7 +254,9 @@ def archive_update(person_id: int, patch: Dict[str, Any]) -> bool:
         raise ValueError("无有效字段")
 
     with engine.begin() as conn:
-        conn.execute(text(f"UPDATE person SET {', '.join(updates)} WHERE id = :id"), params)
+        set_clause = ", ".join(updates)
+        query = text(f"UPDATE person SET {set_clause} WHERE id = :id")
+        conn.execute(query, params)
     return True
 
 
@@ -283,7 +289,9 @@ def me_activation(worker_id: int, patch: Dict[str, Any]) -> None:
         raise ValueError("无有效字段")
 
     with engine.begin() as conn:
-        conn.execute(text(f"UPDATE person SET {', '.join(updates)} WHERE id = :id"), params)
+        set_clause = ", ".join(updates)
+        query = text(f"UPDATE person SET {set_clause} WHERE id = :id")
+        conn.execute(query, params)
 
 
 def batch_import_from_excel(data: bytes, *, default_job_title: Optional[str] = None) -> dict:
@@ -632,7 +640,9 @@ def certificate_update(person_id: int, cert_id: int, patch: Dict[str, Any]) -> s
     if not updates:
         raise ValueError("无有效字段")
     with engine.begin() as conn:
-        conn.execute(text(f"UPDATE person_certificate SET {', '.join(updates)} WHERE id = :cid"), params)
+        set_clause = ", ".join(updates)
+        query = text(f"UPDATE person_certificate SET {set_clause} WHERE id = :cid")
+        conn.execute(query, params)
     return "ok"
 
 

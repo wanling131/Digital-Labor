@@ -7,6 +7,18 @@ from pathlib import Path
 from sqlalchemy import text
 
 try:
+    import bcrypt
+except ImportError:
+    print("Warning: bcrypt not installed, using plain text password (not recommended for production)")
+    bcrypt = None
+
+# 确保密码哈希处理
+if bcrypt:
+    print("Using bcrypt for password hashing")
+else:
+    print("Using plain text password (not secure)")
+
+try:
     # 以包方式运行：python -m database.init_and_import
     from .common import get_database_url, get_engine
     from .import_attendance import import_attendance_from_file
@@ -61,6 +73,13 @@ def _apply_sqlite_schema(database_url: str) -> None:
 
 
 def _ensure_admin_user(database_url: str) -> None:
+    # 对密码进行哈希处理
+    password = '123456'
+    if bcrypt:
+        password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    else:
+        password_hash = password
+    
     engine = get_engine(database_url)
     with engine.begin() as conn:
         if _is_sqlite_url(database_url):
@@ -68,20 +87,22 @@ def _ensure_admin_user(database_url: str) -> None:
                 text(
                     """
                     INSERT INTO "user" (username, password_hash, name, role, enabled)
-                    VALUES ('admin', '123456', '管理员', 'admin', 1)
+                    VALUES ('admin', :password_hash, '管理员', 'admin', 1)
                     ON CONFLICT(username) DO NOTHING
                     """
-                )
+                ),
+                {"password_hash": password_hash}
             )
         else:
             conn.execute(
                 text(
                     """
                     INSERT INTO "user" (username, password_hash, name, role, enabled)
-                    VALUES ('admin', '123456', '管理员', 'admin', 1)
+                    VALUES ('admin', :password_hash, '管理员', 'admin', 1)
                     ON CONFLICT (username) DO NOTHING
                     """
-                )
+                ),
+                {"password_hash": password_hash}
             )
 
 

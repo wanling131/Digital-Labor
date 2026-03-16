@@ -123,7 +123,9 @@ def update(config_id: int, patch: Dict[str, Any]) -> bool:
 
     engine = get_engine()
     with engine.begin() as conn:
-        result = conn.execute(text(f"UPDATE job_title_config SET {', '.join(updates)} WHERE id = :id"), params)
+        set_clause = ", ".join(updates)
+        query = text(f"UPDATE job_title_config SET {set_clause} WHERE id = :id")
+        result = conn.execute(query, params)
     return result.rowcount > 0
 
 

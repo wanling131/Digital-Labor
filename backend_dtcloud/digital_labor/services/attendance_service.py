@@ -145,32 +145,44 @@ def report(*, filters: Dict[str, Any], limit: int, offset: int) -> dict:
         where.append("a.person_id = :pid")
         params["pid"] = int(person_id)
     if org_id:
-        where.append("(a.org_id = :oid OR p.org_id = :oid)")
-        params["oid"] = int(org_id)
+        # 实现基于组织树的数据范围控制
+        engine = get_engine()
+        with engine.connect() as conn:
+            # 获取组织及其所有子组织的ID
+            rows = conn.execute(
+                text('''WITH RECURSIVE org_hierarchy(id) AS (
+                    SELECT id FROM org WHERE id = :org_id
+                    UNION ALL
+                    SELECT o.id FROM org o JOIN org_hierarchy oh ON o.parent_id = oh.id
+                ) SELECT id FROM org_hierarchy'''),
+                {"org_id": int(org_id)}
+            ).scalars().all()
+            org_ids = [int(row) for row in rows]
+            if org_ids:
+                where.append("(a.org_id IN :oid OR p.org_id IN :oid)")
+                params["oid"] = org_ids
     if start:
         where.append("DATE(a.work_date) >= DATE(:start)")
         params["start"] = start
     if end:
         where.append("DATE(a.work_date) <= DATE(:end)")
         params["end"] = end
-    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+    where_clause = " WHERE " + " AND ".join(where) if where else ""
     engine = get_engine()
     with engine.connect() as conn:
-        total = conn.execute(text(f"SELECT COUNT(*) FROM attendance a JOIN person p ON a.person_id=p.id{where_sql}"), params).scalar_one()
-        rows = conn.execute(
-            text(
-                f"""
-                SELECT a.*, p.name as person_name, p.work_no, o.name as org_name
-                FROM attendance a
-                JOIN person p ON a.person_id=p.id
-                LEFT JOIN org o ON a.org_id=o.id
-                {where_sql}
-                ORDER BY a.work_date DESC, a.id DESC
-                LIMIT :limit OFFSET :offset
-                """
-            ),
-            params,
-        ).mappings().all()
+        total_query = text("SELECT COUNT(*) FROM attendance a JOIN person p ON a.person_id=p.id" + where_clause)
+        total = conn.execute(total_query, params).scalar_one()
+        rows_query = text(
+            """
+            SELECT a.*, p.name as person_name, p.work_no, o.name as org_name
+            FROM attendance a
+            JOIN person p ON a.person_id=p.id
+            LEFT JOIN org o ON a.org_id=o.id
+            """
+            + where_clause + 
+            " ORDER BY a.work_date DESC, a.id DESC LIMIT :limit OFFSET :offset"
+        )
+        rows = conn.execute(rows_query, params).mappings().all()
     return {"list": [dict(r) for r in rows], "total": int(total)}
 
 
@@ -246,32 +258,44 @@ def clock_log(*, filters: Dict[str, Any], limit: int, offset: int) -> dict:
         where.append("c.person_id = :pid")
         params["pid"] = int(person_id)
     if org_id:
-        where.append("p.org_id = :oid")
-        params["oid"] = int(org_id)
+        # 实现基于组织树的数据范围控制
+        engine = get_engine()
+        with engine.connect() as conn:
+            # 获取组织及其所有子组织的ID
+            rows = conn.execute(
+                text('''WITH RECURSIVE org_hierarchy(id) AS (
+                    SELECT id FROM org WHERE id = :org_id
+                    UNION ALL
+                    SELECT o.id FROM org o JOIN org_hierarchy oh ON o.parent_id = oh.id
+                ) SELECT id FROM org_hierarchy'''),
+                {"org_id": int(org_id)}
+            ).scalars().all()
+            org_ids = [int(row) for row in rows]
+            if org_ids:
+                where.append("p.org_id IN :oid")
+                params["oid"] = org_ids
     if start:
         where.append("c.punch_at >= :start")
         params["start"] = start
     if end:
         where.append("c.punch_at <= :end")
         params["end"] = f"{end} 23:59:59"
-    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+    where_clause = " WHERE " + " AND ".join(where) if where else ""
     engine = get_engine()
     with engine.connect() as conn:
-        total = conn.execute(text(f"SELECT COUNT(*) FROM clock_log c JOIN person p ON c.person_id=p.id{where_sql}"), params).scalar_one()
-        rows = conn.execute(
-            text(
-                f"""
-                SELECT c.id, c.person_id, c.punch_at, c.type, c.source, c.created_at,
-                       p.name as person_name, p.work_no, o.name as org_name
-                FROM clock_log c
-                JOIN person p ON c.person_id=p.id
-                LEFT JOIN org o ON p.org_id=o.id
-                {where_sql}
-                ORDER BY c.punch_at DESC, c.id DESC
-                LIMIT :limit OFFSET :offset
-                """
-            ),
-            params,
-        ).mappings().all()
+        total_query = text("SELECT COUNT(*) FROM clock_log c JOIN person p ON c.person_id=p.id" + where_clause)
+        total = conn.execute(total_query, params).scalar_one()
+        rows_query = text(
+            """
+            SELECT c.id, c.person_id, c.punch_at, c.type, c.source, c.created_at,
+                   p.name as person_name, p.work_no, o.name as org_name
+            FROM clock_log c
+            JOIN person p ON c.person_id=p.id
+            LEFT JOIN org o ON p.org_id=o.id
+            """
+            + where_clause + 
+            " ORDER BY c.punch_at DESC, c.id DESC LIMIT :limit OFFSET :offset"
+        )
+        rows = conn.execute(rows_query, params).mappings().all()
     return {"list": [dict(r) for r in rows], "total": int(total)}
 

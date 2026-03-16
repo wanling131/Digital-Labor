@@ -6,6 +6,12 @@ from typing import List
 
 from sqlalchemy import Engine, text
 
+try:
+    import bcrypt
+except ImportError:
+    print("Warning: bcrypt not installed, using plain text password (not recommended for production)")
+    bcrypt = None
+
 
 def _insert_id(engine: Engine, conn, sql_with_returning: str, sql_no_returning: str, params=None) -> int:
     params = params or {}
@@ -80,6 +86,13 @@ def _ensure_users(engine: Engine) -> None:
         if int(n or 0) >= 2:
             return
 
+        # 对密码进行哈希处理
+        password = "admin123"
+        if bcrypt:
+            password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        else:
+            password_hash = password
+
         proj_ids = conn.execute(
             text("SELECT id FROM org WHERE type = 'project' ORDER BY id")
         ).scalars().all()
@@ -92,14 +105,14 @@ def _ensure_users(engine: Engine) -> None:
                     text(
                         'INSERT INTO "user" (username, password_hash, name, org_id, role) VALUES (:u, :p, :n, :o, :r)'
                     ),
-                    {"u": "manager1", "p": "admin123", "n": "东区项目经理", "o": proj1, "r": "admin"},
+                    {"u": "manager1", "p": password_hash, "n": "东区项目经理", "o": proj1, "r": "admin"},
                 )
             if proj2:
                 conn.execute(
                     text(
                         'INSERT INTO "user" (username, password_hash, name, org_id, role) VALUES (:u, :p, :n, :o, :r)'
                     ),
-                    {"u": "manager2", "p": "admin123", "n": "西区项目经理", "o": proj2, "r": "user"},
+                    {"u": "manager2", "p": password_hash, "n": "西区项目经理", "o": proj2, "r": "user"},
                 )
         except Exception as e:  # noqa: BLE001
             if "unique" not in str(e).lower():
@@ -121,6 +134,38 @@ def _random_mobile() -> str:
 
 def _ensure_persons(engine: Engine, min_count: int = 20) -> None:
     with engine.begin() as conn:
+        # 检查演示账号是否存在
+        demo_account = conn.execute(text("SELECT id FROM person WHERE mobile = :m"), {"m": "13800138000"}).scalar_one_or_none()
+        if not demo_account:
+            # 创建演示账号
+            team_ids = conn.execute(text("SELECT id FROM org WHERE type = 'team' ORDER BY id")).scalars().all()
+            org_id = team_ids[0] if team_ids else None
+            now = dt.datetime.now()
+            params = {
+                "org_id": org_id,
+                "work_no": "W1000",
+                "name": "演示用户",
+                "mobile": "13800138000",
+                "status": "已进场",
+                "contract_signed": 1,
+                "on_site": 1,
+                "created_at": now - dt.timedelta(days=30),
+            }
+            _insert_id(
+                engine,
+                conn,
+                """
+                INSERT INTO person (org_id, work_no, name, mobile, status, contract_signed, on_site, created_at)
+                VALUES (:org_id, :work_no, :name, :mobile, :status, :contract_signed, :on_site, :created_at)
+                RETURNING id
+                """,
+                """
+                INSERT INTO person (org_id, work_no, name, mobile, status, contract_signed, on_site, created_at)
+                VALUES (:org_id, :work_no, :name, :mobile, :status, :contract_signed, :on_site, :created_at)
+                """,
+                params,
+            )
+
         n = conn.execute(text("SELECT COUNT(*) FROM person")).scalar_one()
         if int(n) >= min_count:
             return
@@ -133,6 +178,7 @@ def _ensure_persons(engine: Engine, min_count: int = 20) -> None:
         now = dt.datetime.now()
         created_ids: List[int] = []
 
+        # 从1开始，避免与演示账号冲突
         for i in range(1, min_count + 1):
             name = _random_name()
             org_id = team_ids[(i - 1) % len(team_ids)]
@@ -209,4 +255,16 @@ def seed_minimal(engine: Engine) -> None:
     _ensure_users(engine)
     _ensure_persons(engine, min_count=30)
     _ensure_attendance(engine, days=15)
+
+
+if __name__ == "__main__":
+    import sys
+    import os
+    # 添加backend_dtcloud目录到Python路径
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend_dtcloud'))
+    
+    from digital_labor.db import get_engine
+    engine = get_engine()
+    seed_minimal(engine)
+    print("Seed data completed successfully!")
 

@@ -49,7 +49,9 @@ def update_me(worker_id: int, patch: Dict[str, Any]) -> None:
         raise ValueError("无有效字段")
     engine = get_engine()
     with engine.begin() as conn:
-        conn.execute(text(f"UPDATE person SET {', '.join(updates)} WHERE id = :id"), params)
+        set_clause = ", ".join(updates)
+        query = text(f"UPDATE person SET {set_clause} WHERE id = :id")
+        conn.execute(query, params)
 
 
 def my_certificates(worker_id: int) -> dict:

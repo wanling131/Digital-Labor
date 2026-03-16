@@ -50,22 +50,20 @@ def equipment_list(*, filters: Dict[str, Any], limit: int, offset: int) -> dict:
     if status:
         where.append("e.status = :status")
         params["status"] = status
-    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+    where_clause = " WHERE " + " AND ".join(where) if where else ""
     engine = get_engine()
     with engine.connect() as conn:
-        total = conn.execute(text(f"SELECT COUNT(*) FROM equipment e{where_sql}"), params).scalar_one()
-        rows = conn.execute(
-            text(
-                f"""
-                SELECT e.*, o.name as org_name
-                FROM equipment e LEFT JOIN org o ON e.org_id=o.id
-                {where_sql}
-                ORDER BY e.updated_at DESC, e.id DESC
-                LIMIT :limit OFFSET :offset
-                """
-            ),
-            params,
-        ).mappings().all()
+        total_query = text("SELECT COUNT(*) FROM equipment e" + where_clause)
+        total = conn.execute(total_query, params).scalar_one()
+        rows_query = text(
+            """
+            SELECT e.*, o.name as org_name
+            FROM equipment e LEFT JOIN org o ON e.org_id=o.id
+            """
+            + where_clause + 
+            " ORDER BY e.updated_at DESC, e.id DESC LIMIT :limit OFFSET :offset"
+        )
+        rows = conn.execute(rows_query, params).mappings().all()
     return {"list": [dict(r) for r in rows], "total": int(total)}
 
 
@@ -106,7 +104,9 @@ def equipment_update(equipment_id: int, patch: Dict[str, Any]) -> bool:
     if len(params.keys()) == 1:
         raise ValueError("无有效字段")
     with engine.begin() as conn:
-        conn.execute(text(f"UPDATE equipment SET {', '.join(updates)} WHERE id = :id"), params)
+        set_clause = ", ".join(updates)
+        query = text(f"UPDATE equipment SET {set_clause} WHERE id = :id")
+        conn.execute(query, params)
     return True
 
 
@@ -132,24 +132,22 @@ def site_log_list(*, filters: Dict[str, Any], limit: int, offset: int) -> dict:
     if log_type:
         where.append("s.log_type = :lt")
         params["lt"] = log_type
-    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+    where_clause = " WHERE " + " AND ".join(where) if where else ""
     engine = get_engine()
     with engine.connect() as conn:
-        total = conn.execute(text(f"SELECT COUNT(*) FROM site_log s{where_sql}"), params).scalar_one()
-        rows = conn.execute(
-            text(
-                f"""
-                SELECT s.*, o.name as org_name, u.name as user_name
-                FROM site_log s
-                LEFT JOIN org o ON s.org_id=o.id
-                LEFT JOIN "user" u ON s.user_id=u.id
-                {where_sql}
-                ORDER BY s.created_at DESC
-                LIMIT :limit OFFSET :offset
-                """
-            ),
-            params,
-        ).mappings().all()
+        total_query = text("SELECT COUNT(*) FROM site_log s" + where_clause)
+        total = conn.execute(total_query, params).scalar_one()
+        rows_query = text(
+            """
+            SELECT s.*, o.name as org_name, u.name as user_name
+            FROM site_log s
+            LEFT JOIN org o ON s.org_id=o.id
+            LEFT JOIN "user" u ON s.user_id=u.id
+            """
+            + where_clause + 
+            " ORDER BY s.created_at DESC LIMIT :limit OFFSET :offset"
+        )
+        rows = conn.execute(rows_query, params).mappings().all()
     return {"list": [dict(r) for r in rows], "total": int(total)}
 
 

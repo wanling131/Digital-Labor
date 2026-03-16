@@ -38,24 +38,36 @@ def confirm_list(*, status: Optional[str], limit: int, offset: int, actor_org_id
         where.append("s.status = :status")
         params["status"] = status
     if actor_org_id is not None:
-        where.append("p.org_id = :oid")
-        params["oid"] = actor_org_id
-    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+        # 实现基于组织树的数据范围控制
+        engine = get_engine()
+        with engine.connect() as conn:
+            # 获取组织及其所有子组织的ID
+            rows = conn.execute(
+                text('''WITH RECURSIVE org_hierarchy(id) AS (
+                    SELECT id FROM org WHERE id = :org_id
+                    UNION ALL
+                    SELECT o.id FROM org o JOIN org_hierarchy oh ON o.parent_id = oh.id
+                ) SELECT id FROM org_hierarchy'''),
+                {"org_id": int(actor_org_id)}
+            ).scalars().all()
+            org_ids = [int(row) for row in rows]
+            if org_ids:
+                where.append("p.org_id IN :oid")
+                params["oid"] = org_ids
+    where_clause = " WHERE " + " AND ".join(where) if where else ""
     engine = get_engine()
     with engine.connect() as conn:
-        total = conn.execute(text(f"SELECT COUNT(*) FROM settlement s JOIN person p ON s.person_id = p.id{where_sql}"), params).scalar_one()
-        rows = conn.execute(
-            text(
-                f"""
-                SELECT s.*, p.name as person_name, p.work_no, p.mobile
-                FROM settlement s JOIN person p ON s.person_id = p.id
-                {where_sql}
-                ORDER BY s.id DESC
-                LIMIT :limit OFFSET :offset
-                """
-            ),
-            params,
-        ).mappings().all()
+        total_query = text("SELECT COUNT(*) FROM settlement s JOIN person p ON s.person_id = p.id" + where_clause)
+        total = conn.execute(total_query, params).scalar_one()
+        rows_query = text(
+            """
+            SELECT s.*, p.name as person_name, p.work_no, p.mobile
+            FROM settlement s JOIN person p ON s.person_id = p.id
+            """
+            + where_clause + 
+            " ORDER BY s.id DESC LIMIT :limit OFFSET :offset"
+        )
+        rows = conn.execute(rows_query, params).mappings().all()
     return {"list": [dict(r) for r in rows], "total": int(total)}
 
 
@@ -144,7 +156,9 @@ def confirm(
 
     paths = get_paths()
     with engine.begin() as conn:
-        conn.execute(text(f"UPDATE settlement SET {', '.join(updates)} WHERE id = :id"), params)
+        set_clause = ", ".join(updates)
+        query = text(f"UPDATE settlement SET {set_clause} WHERE id = :id")
+        conn.execute(query, params)
         if action == "confirm":
             conn.execute(
                 text("UPDATE person SET status = '已离场', on_site = 0, updated_at = CURRENT_TIMESTAMP WHERE id = :pid"),
@@ -272,26 +286,38 @@ def salary_list(*, filters: Dict[str, Any], limit: int, offset: int, actor_org_i
         where.append("s.person_id = :pid")
         params["pid"] = int(person_id)
     if org_id:
-        where.append("p.org_id = :oid")
-        params["oid"] = int(org_id)
+        # 实现基于组织树的数据范围控制
+        engine = get_engine()
+        with engine.connect() as conn:
+            # 获取组织及其所有子组织的ID
+            rows = conn.execute(
+                text('''WITH RECURSIVE org_hierarchy(id) AS (
+                    SELECT id FROM org WHERE id = :org_id
+                    UNION ALL
+                    SELECT o.id FROM org o JOIN org_hierarchy oh ON o.parent_id = oh.id
+                ) SELECT id FROM org_hierarchy'''),
+                {"org_id": int(org_id)}
+            ).scalars().all()
+            org_ids = [int(row) for row in rows]
+            if org_ids:
+                where.append("p.org_id IN :oid")
+                params["oid"] = org_ids
     if month:
         where.append("CAST(s.period_start AS TEXT) LIKE :m")
         params["m"] = f"{month}%"
-    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+    where_clause = " WHERE " + " AND ".join(where) if where else ""
     engine = get_engine()
     with engine.connect() as conn:
-        total = conn.execute(text(f"SELECT COUNT(*) FROM settlement s JOIN person p ON s.person_id=p.id{where_sql}"), params).scalar_one()
-        rows = conn.execute(
-            text(
-                f"""
-                SELECT s.*, p.name as person_name, p.work_no
-                FROM settlement s JOIN person p ON s.person_id=p.id
-                {where_sql}
-                ORDER BY s.period_start DESC, s.id DESC
-                LIMIT :limit OFFSET :offset
-                """
-            ),
-            params,
-        ).mappings().all()
+        total_query = text("SELECT COUNT(*) FROM settlement s JOIN person p ON s.person_id=p.id" + where_clause)
+        total = conn.execute(total_query, params).scalar_one()
+        rows_query = text(
+            """
+            SELECT s.*, p.name as person_name, p.work_no
+            FROM settlement s JOIN person p ON s.person_id=p.id
+            """
+            + where_clause + 
+            " ORDER BY s.period_start DESC, s.id DESC LIMIT :limit OFFSET :offset"
+        )
+        rows = conn.execute(rows_query, params).mappings().all()
     return {"list": [dict(r) for r in rows], "total": int(total)}
 

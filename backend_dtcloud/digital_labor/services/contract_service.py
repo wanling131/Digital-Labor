@@ -269,22 +269,20 @@ def status_list(*, status: Optional[str], limit: int, offset: int) -> dict:
     if status:
         where.append("ci.status = :status")
         params["status"] = status
-    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+    where_clause = " WHERE " + " AND ".join(where) if where else ""
     engine = get_engine()
     with engine.connect() as conn:
-        total = conn.execute(text(f"SELECT COUNT(*) FROM contract_instance ci{where_sql}"), params).scalar_one()
-        rows = conn.execute(
-            text(
-                f"""
-                SELECT ci.*, p.name as person_name, p.work_no
-                FROM contract_instance ci JOIN person p ON ci.person_id=p.id
-                {where_sql}
-                ORDER BY ci.id DESC
-                LIMIT :limit OFFSET :offset
-                """
-            ),
-            params,
-        ).mappings().all()
+        total_query = text("SELECT COUNT(*) FROM contract_instance ci" + where_clause)
+        total = conn.execute(total_query, params).scalar_one()
+        rows_query = text(
+            """
+            SELECT ci.*, p.name as person_name, p.work_no
+            FROM contract_instance ci JOIN person p ON ci.person_id=p.id
+            """
+            + where_clause + 
+            " ORDER BY ci.id DESC LIMIT :limit OFFSET :offset"
+        )
+        rows = conn.execute(rows_query, params).mappings().all()
     return {"list": [dict(r) for r in rows], "total": int(total)}
 
 
@@ -335,24 +333,22 @@ def archive_list(*, filters: Dict[str, Any], limit: int, offset: int) -> dict:
     if date_to:
         where.append("DATE(ci.signed_at) <= DATE(:dt)")
         params["dt"] = date_to
-    where_sql = " WHERE " + " AND ".join(where)
+    where_clause = " WHERE " + " AND ".join(where)
     engine = get_engine()
     with engine.connect() as conn:
-        total = conn.execute(text(f"SELECT COUNT(*) FROM contract_instance ci JOIN person p ON ci.person_id=p.id{where_sql}"), params).scalar_one()
-        rows = conn.execute(
-            text(
-                f"""
-                SELECT ci.*, p.name as person_name, p.work_no, p.org_id as person_org_id, o.name as org_name
-                FROM contract_instance ci
-                JOIN person p ON ci.person_id=p.id
-                LEFT JOIN org o ON p.org_id=o.id
-                {where_sql}
-                ORDER BY ci.signed_at DESC
-                LIMIT :limit OFFSET :offset
-                """
-            ),
-            params,
-        ).mappings().all()
+        total_query = text("SELECT COUNT(*) FROM contract_instance ci JOIN person p ON ci.person_id=p.id" + where_clause)
+        total = conn.execute(total_query, params).scalar_one()
+        rows_query = text(
+            """
+            SELECT ci.*, p.name as person_name, p.work_no, p.org_id as person_org_id, o.name as org_name
+            FROM contract_instance ci
+            JOIN person p ON ci.person_id=p.id
+            LEFT JOIN org o ON p.org_id=o.id
+            """
+            + where_clause + 
+            " ORDER BY ci.signed_at DESC LIMIT :limit OFFSET :offset"
+        )
+        rows = conn.execute(rows_query, params).mappings().all()
     return {"list": [dict(r) for r in rows], "total": int(total)}
 
 

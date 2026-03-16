@@ -180,7 +180,9 @@ def org_update(org_id: int, patch: Dict[str, Any]) -> None:
         raise ValueError("无有效字段")
     engine = get_engine()
     with engine.begin() as conn:
-        conn.execute(text(f"UPDATE org SET {', '.join(updates)} WHERE id = :id"), params)
+        set_clause = ", ".join(updates)
+        query = text(f"UPDATE org SET {set_clause} WHERE id = :id")
+        conn.execute(query, params)
 
 
 def org_delete(org_id: int) -> str:
@@ -266,7 +268,9 @@ def user_update(user_id: int, patch: Dict[str, Any]) -> None:
         raise ValueError("无有效字段")
     engine = get_engine()
     with engine.begin() as conn:
-        conn.execute(text('UPDATE "user" SET ' + ", ".join(updates) + " WHERE id = :id"), params)
+        set_clause = ", ".join(updates)
+        query = text('UPDATE "user" SET ' + set_clause + ' WHERE id = :id')
+        conn.execute(query, params)
 
 
 def seed_role_menu_if_empty() -> None:
@@ -503,7 +507,9 @@ def profile_update(user_id: int, patch: Dict[str, Any]) -> None:
         raise ValueError("无有效字段")
     engine = get_engine()
     with engine.begin() as conn:
-        conn.execute(text('UPDATE "user" SET ' + ", ".join(updates) + " WHERE id = :id"), params)
+        set_clause = ", ".join(updates)
+        query = text('UPDATE "user" SET ' + set_clause + ' WHERE id = :id')
+        conn.execute(query, params)
 
 
 def change_password(user_id: int, old_password: str, new_password: str) -> str:

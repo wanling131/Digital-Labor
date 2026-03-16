@@ -68,6 +68,11 @@ def main() -> None:
 
         checks: List[TableCheck] = []
         for t in tables:
+            # 验证表名安全性，防止SQL注入
+            if not t.replace('_', '').replace('-', '').isalnum():
+                print(f"警告: 表名 '{t}' 包含不安全字符，跳过检查")
+                continue
+            
             # PostgreSQL 里 user 是关键字，这里允许用户传入带引号的表名
             t_sql = t
             s_count = int(_sqlite_scalar(sconn, f"SELECT COUNT(*) FROM {t_sql}") or 0)
