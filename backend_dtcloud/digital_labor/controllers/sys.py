@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from digital_labor.pagination import parse_pagination
 from digital_labor.services import sys_admin_service
+from digital_labor.services.job_title_config_service import list_all, get_one, create, update, delete as delete_job_title
 from digital_labor.services.sys_service import feature_status_payload
 from digital_labor.web.middleware import get_user
 from digital_labor.web.response import err, ok
@@ -243,5 +244,51 @@ def change_password(request: Request, body: ChangePasswordBody):
         return err(404, "用户不存在")
     if r == "bad_old_password":
         return err(400, "旧密码不正确")
+    return ok({"ok": True})
+
+
+class JobTitleCreate(BaseModel):
+    code: Optional[str] = None
+    name: str
+    parent_id: Optional[int] = None
+    sort: int = 0
+
+
+class JobTitleUpdate(BaseModel):
+    code: Optional[str] = None
+    name: Optional[str] = None
+    parent_id: Optional[int] = None
+    sort: Optional[int] = None
+
+
+@router.get("/job-title-config")
+def get_job_title_config():
+    return ok(list_all())
+
+
+@router.post("/job-title-config")
+def create_job_title(body: JobTitleCreate):
+    try:
+        new_id = create(body.model_dump())
+    except ValueError as e:
+        return err(400, str(e))
+    return ok({"id": new_id})
+
+
+@router.put("/job-title-config/{config_id}")
+def update_job_title(config_id: int, body: JobTitleUpdate):
+    patch = {k: v for k, v in body.model_dump().items() if v is not None}
+    try:
+        update(config_id, patch)
+    except ValueError as e:
+        return err(400, str(e))
+    return ok({"ok": True})
+
+
+@router.delete("/job-title-config/{config_id}")
+def delete_job_title_endpoint(config_id: int):
+    r = delete_job_title(config_id)
+    if r == "has_child":
+        return err(400, "请先删除子节点")
     return ok({"ok": True})
 

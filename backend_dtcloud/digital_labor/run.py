@@ -77,6 +77,11 @@ def create_app() -> FastAPI:
                 ensure_user_role_has_export_permission()
             except Exception as e:  # noqa: BLE001
                 logging.warning("Migration ensure_user_role_has_export_permission failed: %s", e)
+            try:
+                from digital_labor.db_migrations import run_job_title_config_migration
+                run_job_title_config_migration()
+            except Exception as e:  # noqa: BLE001
+                logging.warning("Migration run_job_title_config failed: %s", e)
 
     app.add_middleware(
         CORSMiddleware,
