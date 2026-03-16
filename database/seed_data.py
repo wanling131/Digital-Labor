@@ -242,6 +242,71 @@ def _ensure_attendance(engine: Engine, days: int = 10) -> None:
                 )
 
 
+def _ensure_job_titles(engine: Engine) -> None:
+    with engine.begin() as conn:
+        n = conn.execute(text("SELECT COUNT(*) FROM job_title_config")).scalar_one()
+        if int(n) > 0:
+            return
+
+        # 初始化工种配置
+        root_id = _insert_id(
+            engine,
+            conn,
+            "INSERT INTO job_title_config (code, name, parent_id, sort) VALUES ('root', '工种分类', NULL, 0) RETURNING id",
+            "INSERT INTO job_title_config (code, name, parent_id, sort) VALUES ('root', '工种分类', NULL, 0)",
+        )
+
+        # 一级工种
+        craft_id = _insert_id(
+            engine,
+            conn,
+            "INSERT INTO job_title_config (code, name, parent_id, sort) VALUES ('craft', '木工', :p, 0) RETURNING id",
+            "INSERT INTO job_title_config (code, name, parent_id, sort) VALUES ('craft', '木工', :p, 0)",
+            {"p": root_id},
+        )
+        steel_id = _insert_id(
+            engine,
+            conn,
+            "INSERT INTO job_title_config (code, name, parent_id, sort) VALUES ('steel', '钢筋工', :p, 1) RETURNING id",
+            "INSERT INTO job_title_config (code, name, parent_id, sort) VALUES ('steel', '钢筋工', :p, 1)",
+            {"p": root_id},
+        )
+        concrete_id = _insert_id(
+            engine,
+            conn,
+            "INSERT INTO job_title_config (code, name, parent_id, sort) VALUES ('concrete', '混凝土工', :p, 2) RETURNING id",
+            "INSERT INTO job_title_config (code, name, parent_id, sort) VALUES ('concrete', '混凝土工', :p, 2)",
+            {"p": root_id},
+        )
+        scaffold_id = _insert_id(
+            engine,
+            conn,
+            "INSERT INTO job_title_config (code, name, parent_id, sort) VALUES ('scaffold', '架子工', :p, 3) RETURNING id",
+            "INSERT INTO job_title_config (code, name, parent_id, sort) VALUES ('scaffold', '架子工', :p, 3)",
+            {"p": root_id},
+        )
+
+        # 二级工种
+        # 木工子类
+        conn.execute(
+            text("INSERT INTO job_title_config (code, name, parent_id, sort) VALUES (:c, :n, :p, :s)"),
+            {"c": "carpenter", "n": "模板工", "p": craft_id, "s": 0}
+        )
+        conn.execute(
+            text("INSERT INTO job_title_config (code, name, parent_id, sort) VALUES (:c, :n, :p, :s)"),
+            {"c": "joiner", "n": "细木工", "p": craft_id, "s": 1}
+        )
+        # 钢筋工子类
+        conn.execute(
+            text("INSERT INTO job_title_config (code, name, parent_id, sort) VALUES (:c, :n, :p, :s)"),
+            {"c": "steel_fixer", "n": "钢筋绑扎工", "p": steel_id, "s": 0}
+        )
+        conn.execute(
+            text("INSERT INTO job_title_config (code, name, parent_id, sort) VALUES (:c, :n, :p, :s)"),
+            {"c": "steel_cutter", "n": "钢筋切割工", "p": steel_id, "s": 1}
+        )
+
+
 def seed_minimal(engine: Engine) -> None:
     """
     为临时环境补充最小可用数据：
@@ -249,9 +314,11 @@ def seed_minimal(engine: Engine) -> None:
     - user：在 admin 之外维护两名管理用户
     - person：至少若干条人员档案
     - attendance：为这些人员生成最近若干天的考勤
+    - job_title_config：工种配置
     """
 
     _ensure_org(engine)
+    _ensure_job_titles(engine)
     _ensure_users(engine)
     _ensure_persons(engine, min_count=30)
     _ensure_attendance(engine, days=15)
