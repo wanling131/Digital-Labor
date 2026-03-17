@@ -5,6 +5,12 @@ import { defineConfig, devices } from '@playwright/test'
  * 运行前请先启动后端：cd backend_dtcloud && python -m digital_labor.run
  * 前端由 webServer 自动启动。
  */
+// 声明process变量
+declare const process: {
+  env: Record<string, string | undefined>
+  cwd: () => string
+}
+
 export default defineConfig({
   testDir: '.',
   fullyParallel: true,
