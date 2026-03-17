@@ -307,6 +307,22 @@ def seed_role_permission_if_empty() -> None:
         pass
 
 
+def seed_role_org_scope_if_empty() -> None:
+    """为已有角色初始化组织数据范围权限（若不存在）。"""
+    engine = get_engine()
+    with engine.connect() as conn:
+        n = conn.execute(text("SELECT COUNT(*) FROM role_org_scope")).scalar_one()
+        if int(n) > 0:
+            return
+    # 为 admin 角色添加全部组织的访问权限
+    engine = get_engine()
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("INSERT INTO role_org_scope (role_code, org_id, scope_type) VALUES ('admin', 0, 'all') ON CONFLICT DO NOTHING"))
+    except Exception:  # noqa: BLE001  # unique violation if already seeded
+        pass
+
+
 def my_menu(user_id: int) -> dict:
     seed_role_menu_if_empty()
     engine = get_engine()
@@ -463,6 +479,109 @@ def my_permissions(user_id: int) -> dict:
     data = {"permissions": [p["permission_key"] for p in perms], "org_id": org_id, "role": role}
     _cache_set(f"my_permissions:{user_id}", data)
     return data
+
+
+def role_org_scopes(code: str) -> dict:
+    """获取角色的组织数据范围权限。"""
+    seed_role_org_scope_if_empty()
+    engine = get_engine()
+    with engine.connect() as conn:
+        rows = conn.execute(text("SELECT org_id, scope_type FROM role_org_scope WHERE role_code = :c"), {"c": code}).mappings().all()
+    return {"scopes": [dict(r) for r in rows]}
+
+
+def role_org_scopes_save(code: str, scopes: List[Dict[str, Any]]) -> dict:
+    """保存角色的组织数据范围权限。"""
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM role_org_scope WHERE role_code = :c"), {"c": code})
+        for scope in scopes:
+            org_id = int(scope.get("org_id", 0))
+            scope_type = scope.get("scope_type", "self")
+            conn.execute(
+                text("INSERT INTO role_org_scope (role_code, org_id, scope_type) VALUES (:c, :o, :s)"),
+                {"c": code, "o": org_id, "s": scope_type}
+            )
+    _cache_invalidate_prefix("user_org_scope:")
+    return {"ok": True, "count": len(scopes)}
+
+
+def get_user_org_scope(user_id: int) -> List[Dict[str, Any]]:
+    """获取用户的组织数据范围权限。"""
+    cached = _cache_get(f"user_org_scope:{user_id}")
+    if cached is not None:
+        return cached
+    
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(text('SELECT role, org_id FROM "user" WHERE id = :id AND enabled = 1'), {"id": user_id}).mappings().first()
+        if not row:
+            return []
+        role = row.get("role") or "user"
+        user_org_id = row.get("org_id")
+        
+        # 管理员拥有全部权限
+        if role == "admin":
+            scopes = [{"org_id": 0, "scope_type": "all"}]
+            _cache_set(f"user_org_scope:{user_id}", scopes)
+            return scopes
+        
+        # 获取角色的组织范围权限
+        scope_rows = conn.execute(
+            text("SELECT org_id, scope_type FROM role_org_scope WHERE role_code = :r"),
+            {"r": role}
+        ).mappings().all()
+        
+        scopes = [dict(r) for r in scope_rows]
+        
+        # 如果角色没有配置范围，使用用户所属组织
+        if not scopes and user_org_id:
+            scopes = [{"org_id": user_org_id, "scope_type": "self"}]
+    
+    _cache_set(f"user_org_scope:{user_id}", scopes)
+    return scopes
+
+
+def get_org_descendants(org_id: int) -> List[int]:
+    """获取组织及其所有子组织的ID列表。"""
+    engine = get_engine()
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text('''WITH RECURSIVE org_hierarchy(id) AS (
+                SELECT id FROM org WHERE id = :org_id
+                UNION ALL
+                SELECT o.id FROM org o JOIN org_hierarchy oh ON o.parent_id = oh.id
+            ) SELECT id FROM org_hierarchy'''),
+            {"org_id": org_id}
+        ).scalars().all()
+        return [int(row) for row in rows]
+
+
+def get_user_visible_orgs(user_id: int) -> List[int]:
+    """获取用户可访问的组织ID列表。"""
+    scopes = get_user_org_scope(user_id)
+    visible_orgs = set()
+    
+    for scope in scopes:
+        org_id = scope.get("org_id", 0)
+        scope_type = scope.get("scope_type", "self")
+        
+        if scope_type == "all":
+            # 全部组织
+            engine = get_engine()
+            with engine.connect() as conn:
+                rows = conn.execute(text("SELECT id FROM org")).scalars().all()
+                visible_orgs.update([int(row) for row in rows])
+        elif scope_type == "self":
+            # 仅当前组织
+            if org_id > 0:
+                visible_orgs.add(org_id)
+        elif scope_type == "descendant":
+            # 当前组织及其子组织
+            if org_id > 0:
+                visible_orgs.update(get_org_descendants(org_id))
+    
+    return list(visible_orgs)
 
 
 def op_log_list(limit: int, offset: int) -> dict:
@@ -622,4 +741,3 @@ def import_users_from_excel(data: bytes) -> UserImportResult:
                     errors.append(f"第 {i + 1} 行：{e}")
 
     return UserImportResult(count=count, errors=errors)
-

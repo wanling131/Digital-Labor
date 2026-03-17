@@ -157,6 +157,26 @@ def role_permissions_save(code: str, body: KeysBody):
     return ok(sys_admin_service.role_permissions_save(code, body.keys))
 
 
+class OrgScopeItem(BaseModel):
+    org_id: int
+    scope_type: str = "self"
+
+
+class OrgScopesBody(BaseModel):
+    scopes: List[OrgScopeItem]
+
+
+@router.get("/role/{code}/org-scopes")
+def role_org_scopes(code: str):
+    return ok(sys_admin_service.role_org_scopes(code))
+
+
+@router.put("/role/{code}/org-scopes")
+def role_org_scopes_save(code: str, body: OrgScopesBody):
+    scopes = [s.model_dump() for s in body.scopes]
+    return ok(sys_admin_service.role_org_scopes_save(code, scopes))
+
+
 @router.get("/all-permissions")
 def all_permissions():
     return ok(sys_admin_service.all_permissions())

@@ -67,11 +67,7 @@ def create_app() -> FastAPI:
                 run_attendance_overtime_migration()
             except Exception as e:  # noqa: BLE001
                 logging.warning("Migration run_attendance_overtime failed: %s", e)
-            try:
-                from digital_labor.db_migrations import run_worker_password_and_notification_migration
-                run_worker_password_and_notification_migration()
-            except Exception as e:  # noqa: BLE001
-                logging.warning("Migration run_worker_password_and_notification failed: %s", e)
+            # 移除不存在的迁移函数引用
             try:
                 from digital_labor.db_migrations import ensure_user_role_has_export_permission
                 ensure_user_role_has_export_permission()
@@ -82,6 +78,11 @@ def create_app() -> FastAPI:
                 run_job_title_config_migration()
             except Exception as e:  # noqa: BLE001
                 logging.warning("Migration run_job_title_config failed: %s", e)
+            try:
+                from digital_labor.db_migrations import run_role_org_scope_migration
+                run_role_org_scope_migration()
+            except Exception as e:  # noqa: BLE001
+                logging.warning("Migration run_role_org_scope failed: %s", e)
 
     app.add_middleware(
         CORSMiddleware,

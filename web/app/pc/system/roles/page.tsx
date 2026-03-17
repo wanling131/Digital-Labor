@@ -35,6 +35,9 @@ import {
   Settings,
   Eye,
   MoreHorizontal,
+  ChevronRight,
+  ChevronDown,
+  Building2,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -48,6 +51,13 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { api } from "@/lib/api"
 
 interface Role {
@@ -58,6 +68,21 @@ interface Role {
   permissions: string[]
   createdAt: string
   status: "active" | "inactive"
+}
+
+interface OrgNode {
+  id: string
+  name: string
+  type: string
+  manager: string
+  memberCount: number
+  children?: OrgNode[]
+  expanded?: boolean
+}
+
+interface OrgScope {
+  org_id: number
+  scope_type: string
 }
 
 const permissionModules = [
@@ -127,8 +152,12 @@ export default function RolesPage() {
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([])
   const [roles, setRoles] = useState<Role[]>([])
   const [loading, setLoading] = useState(true)
+  const [orgTree, setOrgTree] = useState<OrgNode[]>([])
+  const [selectedOrgScopes, setSelectedOrgScopes] = useState<OrgScope[]>([])
+  const [currentRole, setCurrentRole] = useState<string | null>(null)
 
   useEffect(() => {
+    // 获取角色列表
     api<{ list: { code: string; name: string; desc: string; userCount: number }[] }>("/api/sys/role")
       .then((res) => {
         setRoles(
@@ -145,6 +174,13 @@ export default function RolesPage() {
       })
       .catch(() => setRoles([]))
       .finally(() => setLoading(false))
+
+    // 获取组织树
+    api<{ tree: OrgNode[] }>("/api/sys/org")
+      .then((res) => {
+        setOrgTree(res.tree || [])
+      })
+      .catch(() => setOrgTree([]))
   }, [])
 
   const togglePermission = (permissionId: string) => {
@@ -163,6 +199,106 @@ export default function RolesPage() {
     } else {
       setSelectedPermissions((prev) => [...new Set([...prev, ...permissionIds])])
     }
+  }
+
+  const loadRoleOrgScopes = useCallback((roleCode: string) => {
+    setCurrentRole(roleCode)
+    api<{ scopes: OrgScope[] }>(`/api/sys/role/${roleCode}/org-scopes`)
+      .then((res) => {
+        setSelectedOrgScopes(res.scopes || [])
+      })
+      .catch(() => setSelectedOrgScopes([]))
+  }, [])
+
+  const saveRoleOrgScopes = useCallback((roleCode: string) => {
+    api(`/api/sys/role/${roleCode}/org-scopes`, {
+      method: "PUT",
+      body: { scopes: selectedOrgScopes }
+    })
+      .then(() => {
+        alert("组织数据范围权限保存成功")
+      })
+      .catch(() => {
+        alert("保存失败，请重试")
+      })
+  }, [selectedOrgScopes])
+
+  const toggleOrgScope = (orgId: number, scopeType: string) => {
+    setSelectedOrgScopes((prev) => {
+      const existingIndex = prev.findIndex((s) => s.org_id === orgId)
+      if (existingIndex >= 0) {
+        return prev.filter((s) => s.org_id !== orgId)
+      } else {
+        return [...prev, { org_id: orgId, scope_type: scopeType }]
+      }
+    })
+  }
+
+  const OrgTreeNode = ({ node, level = 0 }: { node: OrgNode; level?: number }) => {
+    const [expanded, setExpanded] = useState(node.expanded ?? false)
+    const hasChildren = node.children && node.children.length > 0
+    const isSelected = selectedOrgScopes.some((s) => s.org_id === parseInt(node.id))
+
+    return (
+      <div className="select-none">
+        <div
+          className="flex items-center gap-2 py-2 px-3 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors group"
+          style={{ paddingLeft: `${level * 24 + 12}px` }}
+          onClick={() => hasChildren && setExpanded(!expanded)}
+        >
+          <div className="w-5 h-5 flex items-center justify-center">
+            {hasChildren ? (
+              expanded ? (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              )
+            ) : (
+              <div className="w-4" />
+            )}
+          </div>
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={() => toggleOrgScope(parseInt(node.id), "descendant")}
+            onClick={(e) => e.stopPropagation()}
+          />
+          <div className="flex-1 flex items-center gap-3">
+            <Building2 className="h-4 w-4 text-primary" />
+            <span className="font-medium">{node.name}</span>
+            <span className="text-sm text-muted-foreground">{node.memberCount}人</span>
+          </div>
+          {isSelected && (
+            <Select
+              value={selectedOrgScopes.find((s) => s.org_id === parseInt(node.id))?.scope_type || "descendant"}
+              onValueChange={(value) => {
+                setSelectedOrgScopes((prev) =>
+                  prev.map((s) =>
+                    s.org_id === parseInt(node.id)
+                      ? { ...s, scope_type: value }
+                      : s
+                  )
+                )
+              }}
+            >
+              <SelectTrigger className="w-32">
+                <SelectValue placeholder="选择范围" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="self">仅当前组织</SelectItem>
+                <SelectItem value="descendant">当前及子组织</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+        {expanded && hasChildren && (
+          <div>
+            {node.children!.map((child) => (
+              <OrgTreeNode key={child.id} node={child} level={level + 1} />
+            ))}
+          </div>
+        )}
+      </div>
+    )
   }
 
   return (
@@ -193,59 +329,75 @@ export default function RolesPage() {
                 <Label>角色描述</Label>
                 <Textarea placeholder="请输入角色描述" />
               </div>
-              <div className="grid gap-2">
-                <Label>功能权限</Label>
-                <div className="border rounded-lg">
-                  <Accordion type="multiple" className="w-full">
-                    {permissionModules.map((module) => (
-                      <AccordionItem key={module.id} value={module.id}>
-                        <AccordionTrigger className="px-4 hover:no-underline">
-                          <div className="flex items-center gap-3">
-                            <Checkbox
-                              checked={module.permissions.every((p) =>
-                                selectedPermissions.includes(p.id)
-                              )}
-                              onCheckedChange={() =>
-                                toggleModuleAll(module.id, module.permissions)
-                              }
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                            <span>{module.name}</span>
-                            <Badge variant="secondary" className="text-xs">
-                              {
-                                module.permissions.filter((p) =>
+              <div className="grid gap-4">
+                <div className="grid gap-2">
+                  <Label>功能权限</Label>
+                  <div className="border rounded-lg">
+                    <Accordion type="multiple" className="w-full">
+                      {permissionModules.map((module) => (
+                        <AccordionItem key={module.id} value={module.id}>
+                          <AccordionTrigger className="px-4 hover:no-underline">
+                            <div className="flex items-center gap-3">
+                              <Checkbox
+                                checked={module.permissions.every((p) =>
                                   selectedPermissions.includes(p.id)
-                                ).length
-                              }
-                              /{module.permissions.length}
-                            </Badge>
-                          </div>
-                        </AccordionTrigger>
-                        <AccordionContent className="px-4 pb-4">
-                          <div className="grid grid-cols-2 gap-3 pl-7">
-                            {module.permissions.map((permission) => (
-                              <div
-                                key={permission.id}
-                                className="flex items-center gap-2"
-                              >
-                                <Checkbox
-                                  id={permission.id}
-                                  checked={selectedPermissions.includes(permission.id)}
-                                  onCheckedChange={() => togglePermission(permission.id)}
-                                />
-                                <Label
-                                  htmlFor={permission.id}
-                                  className="text-sm font-normal cursor-pointer"
+                                )}
+                                onCheckedChange={() =>
+                                  toggleModuleAll(module.id, module.permissions)
+                                }
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                              <span>{module.name}</span>
+                              <Badge variant="secondary" className="text-xs">
+                                {
+                                  module.permissions.filter((p) =>
+                                    selectedPermissions.includes(p.id)
+                                  ).length
+                                }
+                                /{module.permissions.length}
+                              </Badge>
+                            </div>
+                          </AccordionTrigger>
+                          <AccordionContent className="px-4 pb-4">
+                            <div className="grid grid-cols-2 gap-3 pl-7">
+                              {module.permissions.map((permission) => (
+                                <div
+                                  key={permission.id}
+                                  className="flex items-center gap-2"
                                 >
-                                  {permission.name}
-                                </Label>
-                              </div>
-                            ))}
-                          </div>
-                        </AccordionContent>
-                      </AccordionItem>
-                    ))}
-                  </Accordion>
+                                  <Checkbox
+                                    id={permission.id}
+                                    checked={selectedPermissions.includes(permission.id)}
+                                    onCheckedChange={() => togglePermission(permission.id)}
+                                  />
+                                  <Label
+                                    htmlFor={permission.id}
+                                    className="text-sm font-normal cursor-pointer"
+                                  >
+                                    {permission.name}
+                                  </Label>
+                                </div>
+                              ))}
+                            </div>
+                          </AccordionContent>
+                        </AccordionItem>
+                      ))}
+                    </Accordion>
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  <Label>组织数据范围</Label>
+                  <div className="border rounded-lg p-2 max-h-[400px] overflow-y-auto">
+                    {orgTree.length === 0 ? (
+                      <p className="text-sm text-muted-foreground py-4 text-center">
+                        暂无组织数据
+                      </p>
+                    ) : (
+                      orgTree.map((node) => (
+                        <OrgTreeNode key={node.id} node={node} />
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
