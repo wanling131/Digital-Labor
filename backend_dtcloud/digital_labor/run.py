@@ -83,6 +83,11 @@ def create_app() -> FastAPI:
                 run_role_org_scope_migration()
             except Exception as e:  # noqa: BLE001
                 logging.warning("Migration run_role_org_scope failed: %s", e)
+            try:
+                from digital_labor.services.sys_admin_service import seed_op_log_if_empty
+                seed_op_log_if_empty()
+            except Exception as e:  # noqa: BLE001
+                logging.warning("Seed op_log failed: %s", e)
 
     app.add_middleware(
         CORSMiddleware,

@@ -323,6 +323,45 @@ def seed_role_org_scope_if_empty() -> None:
         pass
 
 
+def seed_op_log_if_empty() -> None:
+    """为系统初始化一些测试日志数据（若不存在）。"""
+    engine = get_engine()
+    with engine.connect() as conn:
+        n = conn.execute(text("SELECT COUNT(*) FROM op_log")).scalar_one()
+        if int(n) > 0:
+            return
+    # 添加一些测试日志数据
+    engine = get_engine()
+    try:
+        with engine.begin() as conn:
+            test_logs = [
+                (1, "admin", "认证", "登录", "用户名: admin, 角色: admin", "成功"),
+                (1, "admin", "组织管理", "创建", "组织名称: 总公司, 类型: company", "成功"),
+                (1, "admin", "用户管理", "创建", "用户名: user1, 角色: user", "成功"),
+                (1, "admin", "组织管理", "创建", "组织名称: 分公司, 类型: department", "成功"),
+                (1, "admin", "用户管理", "更新", "用户ID: 2, 更新内容: {'role': 'admin'}", "成功"),
+                (1, "admin", "认证", "退出", "用户退出登录", "成功"),
+                (2, "user1", "认证", "登录", "用户名: user1, 角色: admin", "成功"),
+                (2, "user1", "组织管理", "更新", "组织ID: 1, 更新内容: {'name': '总公司（更新）'}", "成功"),
+                (2, "user1", "认证", "退出", "用户退出登录", "成功"),
+                (1, "admin", "认证", "登录", "用户名: admin, 角色: admin", "成功"),
+            ]
+            for log in test_logs:
+                conn.execute(
+                    text("INSERT INTO op_log (user_id, username, module, action, detail, result) VALUES (:user_id, :username, :module, :action, :detail, :result)"),
+                    {
+                        "user_id": log[0],
+                        "username": log[1],
+                        "module": log[2],
+                        "action": log[3],
+                        "detail": log[4],
+                        "result": log[5]
+                    }
+                )
+    except Exception:  # noqa: BLE001  # unique violation if already seeded
+        pass
+
+
 def my_menu(user_id: int) -> dict:
     seed_role_menu_if_empty()
     engine = get_engine()
@@ -590,6 +629,23 @@ def op_log_list(limit: int, offset: int) -> dict:
         total = conn.execute(text("SELECT COUNT(*) FROM op_log")).scalar_one()
         rows = conn.execute(text("SELECT * FROM op_log ORDER BY id DESC LIMIT :l OFFSET :o"), {"l": limit, "o": offset}).mappings().all()
     return {"list": [dict(r) for r in rows], "total": int(total)}
+
+
+def op_log_add(user_id: int, username: str, module: str, action: str, detail: str, result: str) -> None:
+    """添加操作日志"""
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text("INSERT INTO op_log (user_id, username, module, action, detail, result) VALUES (:user_id, :username, :module, :action, :detail, :result)"),
+            {
+                "user_id": user_id,
+                "username": username,
+                "module": module,
+                "action": action,
+                "detail": detail,
+                "result": result
+            }
+        )
 
 
 def my_profile(user_id: int) -> dict:

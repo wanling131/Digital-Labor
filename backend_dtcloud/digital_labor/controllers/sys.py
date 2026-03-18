@@ -42,29 +42,50 @@ def get_org():
 
 
 @router.post("/org")
-def create_org(body: OrgCreate):
+def create_org(body: OrgCreate, request: Request):
+    u = get_user(request)
+    current_user_id = u.get("userId") if u else 0
+    current_username = u.get("username") if u else "system"
+    
     try:
         new_id = sys_admin_service.org_create(body.model_dump())
     except ValueError as e:
+        sys_admin_service.op_log_add(current_user_id, current_username, "组织管理", "创建", f"组织名称: {body.name}, 类型: {body.type}", "失败")
         return err(400, str(e))
+    
+    sys_admin_service.op_log_add(current_user_id, current_username, "组织管理", "创建", f"组织名称: {body.name}, 类型: {body.type}", "成功")
     return ok({"id": int(new_id)})
 
 
 @router.put("/org/{org_id}")
-def update_org(org_id: int, body: OrgUpdate):
+def update_org(org_id: int, body: OrgUpdate, request: Request):
+    u = get_user(request)
+    current_user_id = u.get("userId") if u else 0
+    current_username = u.get("username") if u else "system"
+    
     patch = {k: v for k, v in body.model_dump().items() if v is not None}
     try:
         sys_admin_service.org_update(org_id, patch)
     except ValueError as e:
+        sys_admin_service.op_log_add(current_user_id, current_username, "组织管理", "更新", f"组织ID: {org_id}, 更新内容: {str(patch)}", "失败")
         return err(400, str(e))
+    
+    sys_admin_service.op_log_add(current_user_id, current_username, "组织管理", "更新", f"组织ID: {org_id}, 更新内容: {str(patch)}", "成功")
     return ok({"ok": True})
 
 
 @router.delete("/org/{org_id}")
-def delete_org(org_id: int):
+def delete_org(org_id: int, request: Request):
+    u = get_user(request)
+    current_user_id = u.get("userId") if u else 0
+    current_username = u.get("username") if u else "system"
+    
     r = sys_admin_service.org_delete(org_id)
     if r == "has_child":
+        sys_admin_service.op_log_add(current_user_id, current_username, "组织管理", "删除", f"组织ID: {org_id}", "失败")
         return err(400, "请先删除子节点")
+    
+    sys_admin_service.op_log_add(current_user_id, current_username, "组织管理", "删除", f"组织ID: {org_id}", "成功")
     return ok({"ok": True})
 
 
@@ -82,13 +103,21 @@ class UserCreate(BaseModel):
 
 
 @router.post("/user")
-def user_create(body: UserCreate):
+def user_create(body: UserCreate, request: Request):
+    u = get_user(request)
+    current_user_id = u.get("userId") if u else 0
+    current_username = u.get("username") if u else "system"
+    
     try:
         r = sys_admin_service.user_create(body.model_dump())
     except ValueError as e:
+        sys_admin_service.op_log_add(current_user_id, current_username, "用户管理", "创建", f"用户名: {body.username}, 角色: {body.role}", "失败")
         return err(400, str(e))
     if r == "duplicate":
+        sys_admin_service.op_log_add(current_user_id, current_username, "用户管理", "创建", f"用户名: {body.username}, 角色: {body.role}", "失败")
         return err(400, "用户名已存在")
+    
+    sys_admin_service.op_log_add(current_user_id, current_username, "用户管理", "创建", f"用户名: {body.username}, 角色: {body.role}", "成功")
     return ok({"id": int(r)})
 
 
@@ -101,12 +130,19 @@ class UserUpdate(BaseModel):
 
 
 @router.put("/user/{user_id}")
-def user_update(user_id: int, body: UserUpdate):
+def user_update(user_id: int, body: UserUpdate, request: Request):
+    u = get_user(request)
+    current_user_id = u.get("userId") if u else 0
+    current_username = u.get("username") if u else "system"
+    
     patch = {k: v for k, v in body.model_dump().items() if v is not None}
     try:
         sys_admin_service.user_update(user_id, patch)
     except ValueError as e:
+        sys_admin_service.op_log_add(current_user_id, current_username, "用户管理", "更新", f"用户ID: {user_id}, 更新内容: {str(patch)}", "失败")
         return err(400, str(e))
+    
+    sys_admin_service.op_log_add(current_user_id, current_username, "用户管理", "更新", f"用户ID: {user_id}, 更新内容: {str(patch)}", "成功")
     return ok({"ok": True})
 
 
@@ -139,8 +175,14 @@ class PathsBody(BaseModel):
 
 
 @router.put("/role/{code}/menus")
-def role_menus_save(code: str, body: PathsBody):
-    return ok(sys_admin_service.role_menus_save(code, body.paths))
+def role_menus_save(code: str, body: PathsBody, request: Request):
+    u = get_user(request)
+    current_user_id = u.get("userId") if u else 0
+    current_username = u.get("username") if u else "system"
+    
+    result = sys_admin_service.role_menus_save(code, body.paths)
+    sys_admin_service.op_log_add(current_user_id, current_username, "权限管理", "更新菜单", f"角色: {code}, 菜单数量: {len(body.paths)}", "成功")
+    return ok(result)
 
 
 @router.get("/role/{code}/permissions")
@@ -153,8 +195,14 @@ class KeysBody(BaseModel):
 
 
 @router.put("/role/{code}/permissions")
-def role_permissions_save(code: str, body: KeysBody):
-    return ok(sys_admin_service.role_permissions_save(code, body.keys))
+def role_permissions_save(code: str, body: KeysBody, request: Request):
+    u = get_user(request)
+    current_user_id = u.get("userId") if u else 0
+    current_username = u.get("username") if u else "system"
+    
+    result = sys_admin_service.role_permissions_save(code, body.keys)
+    sys_admin_service.op_log_add(current_user_id, current_username, "权限管理", "更新权限", f"角色: {code}, 权限数量: {len(body.keys)}", "成功")
+    return ok(result)
 
 
 class OrgScopeItem(BaseModel):
@@ -172,9 +220,15 @@ def role_org_scopes(code: str):
 
 
 @router.put("/role/{code}/org-scopes")
-def role_org_scopes_save(code: str, body: OrgScopesBody):
+def role_org_scopes_save(code: str, body: OrgScopesBody, request: Request):
+    u = get_user(request)
+    current_user_id = u.get("userId") if u else 0
+    current_username = u.get("username") if u else "system"
+    
     scopes = [s.model_dump() for s in body.scopes]
-    return ok(sys_admin_service.role_org_scopes_save(code, scopes))
+    result = sys_admin_service.role_org_scopes_save(code, scopes)
+    sys_admin_service.op_log_add(current_user_id, current_username, "权限管理", "更新组织范围", f"角色: {code}, 组织范围数量: {len(scopes)}", "成功")
+    return ok(result)
 
 
 @router.get("/all-permissions")
