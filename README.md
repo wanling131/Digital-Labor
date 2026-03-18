@@ -15,14 +15,14 @@ digital-labor/
 │   ├── next.config.mjs
 │   └── package.json
 │
-├── backend_dtcloud/             # 后端（Python 3.8 + FastAPI 兼容层 + dtcloud 路由层 + PostgreSQL）
+├── server/                     # 后端（Python 3.8 + FastAPI 兼容层 + dtcloud 路由层 + PostgreSQL）
 │   ├── digital_labor/           # 应用代码（controllers/services/settings/db 等）
 │   ├── scripts/                 # 兼容检查等脚本
 │   ├── requirements.txt         # 含 dtcloud 依赖
 │   ├── requirements-fastapi.txt # 仅 FastAPI 依赖（dtcloud 安装失败时可用）
 │   └── README.md
 │
-├── server/                     # 旧后端（Node/Express/SQLite，仅用于对照/归档）
+├── server-legacy/              # 旧后端（Node/Express/SQLite，仅用于对照/归档）
 │   ├── routes/
 │   ├── db/
 │   ├── middleware/
@@ -62,12 +62,12 @@ digital-labor/
 npm run install:all
 ```
 
-会依次安装：根目录、server（旧后端）、web（前端）、**backend_dtcloud（Python 后端）** 的依赖。
+会依次安装：根目录、server-legacy（旧后端）、web（前端）、**server（Python 后端）** 的依赖。
 
 如需使用虚拟环境隔离 Python 依赖，可手动创建：
 
 ```bash
-cd backend_dtcloud
+cd server
 python -m venv .venv
 # Windows: .\.venv\Scripts\activate
 # macOS/Linux: source .venv/bin/activate
@@ -129,7 +129,7 @@ npm run dev
 
 ## 部署要点
 
-- **后端**：在 `backend_dtcloud` 目录 `python -m digital_labor.run`，通过环境变量配置 `PORT`、`JWT_SECRET`、`DATABASE_URL` 等（见 docs/环境变量示例.md）。
+- **后端**：在 `server` 目录 `python -m digital_labor.run`，通过环境变量配置 `PORT`、`JWT_SECRET`、`DATABASE_URL` 等（见 docs/环境变量示例.md）。
 - **前端**：Next.js 默认构建产物为 `web/.next`，需用 Node 进程运行 `next start` 并由 Nginx 反代；如需纯静态部署，可配置 `output: 'export'` 生成 `web/out/` 再用 Nginx 托管。若与 API 同域，在 Nginx 中配置 `/api` 反向代理到后端。
 - 详见 **docs/部署说明.md**。
 

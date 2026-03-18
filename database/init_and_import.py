@@ -34,7 +34,7 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DOCS_DIR = ROOT / "docs"
-POSTGRES_SCHEMA_PATH = ROOT / "backend_dtcloud" / "scripts" / "postgres_schema.sql"
+POSTGRES_SCHEMA_PATH = ROOT / "server" / "scripts" / "postgres_schema.sql"
 SQLITE_SCHEMA_PATH = ROOT / "database" / "sqlite_schema.sql"
 
 
@@ -111,7 +111,7 @@ def main() -> None:
     parser.add_argument(
         "--database-url",
         default="",
-        help="Override DATABASE_URL (fallback to env or backend_dtcloud settings).",
+        help="Override DATABASE_URL (fallback to env or server settings).",
     )
     parser.add_argument(
         "--docs-dir",

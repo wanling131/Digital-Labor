@@ -1,5 +1,5 @@
 import sys
-sys.path.insert(0, 'backend_dtcloud')
+sys.path.insert(0, 'server')
 
 from sqlalchemy import text
 from digital_labor.db import get_engine

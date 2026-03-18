@@ -94,8 +94,8 @@ export default function ContractPage() {
         apiWorker<{ list: unknown[] }>("/api/contract/my-pending"),
         apiWorker<{ list: unknown[] }>("/api/contract/my-signed"),
       ])
-      const pending = (pendingRes.list || []).map((r: Record<string, unknown>) => mapRow(r as Parameters<typeof mapRow>[0]))
-      const signed = (signedRes.list || []).map((r: Record<string, unknown>) => mapRow(r as Parameters<typeof mapRow>[0]))
+      const pending = (pendingRes.list || []).map((r) => mapRow(r as Parameters<typeof mapRow>[0]))
+      const signed = (signedRes.list || []).map((r) => mapRow(r as Parameters<typeof mapRow>[0]))
       setContractList([...pending, ...signed])
     } catch {
       setContractList([])

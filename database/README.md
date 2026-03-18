@@ -18,7 +18,7 @@ npm run seed
 
 - SQLite 版本需 **>= 3.24.0**（用于 `ON CONFLICT`/UPSERT 语法）。一般随 Python 自带的 sqlite3 即可；若版本过低，请升级 Python，或改用 PostgreSQL。
 - 已安装并启动 PostgreSQL，且已创建目标数据库（例如 `digital_labor`）。
-- 已在仓库根目录或 `backend_dtcloud/` 下配置好 `.env`，其中包含：
+- 已在仓库根目录或 `server/` 下配置好 `.env`，其中包含：
   - `DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/digital_labor`
 - （可选）将以下 Excel 放到 `docs/` 目录：
   - `docs/实名制信息数据.xls`（或 `.xlsx`）——实名制人员信息
@@ -41,7 +41,7 @@ python init_and_import.py --with-seed
 
 脚本行为：
 
-1. 执行 `backend_dtcloud/scripts/postgres_schema.sql`，在 PostgreSQL 中创建所有表与索引。
+1. 执行 `server/scripts/postgres_schema.sql`，在 PostgreSQL 中创建所有表与索引。
 2. 确保存在默认 admin 用户：`username=admin, password_hash=123456`。
 3. 若存在 `docs/实名制信息数据.xls`（或 `.xlsx`），解析并导入到 `person` 表。
 4. 若存在两份工人考勤 Excel，则解析并导入到 `attendance` 表（按姓名/工号匹配 `person`）。

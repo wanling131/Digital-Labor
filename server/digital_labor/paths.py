@@ -11,7 +11,7 @@ class Paths:
 
     关键点：
     - 旧系统将静态资源暴露在 `/uploads/**`，且 DB 中存的是相对 `server/` 的路径；
-      因此新后端使用 `backend_dtcloud/uploads`，避免前端路径失效。
+      因此新后端使用 `server/uploads`，避免前端路径失效。
     """
 
     workspace_root: str

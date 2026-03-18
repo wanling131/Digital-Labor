@@ -1,8 +1,8 @@
 import sys
 import os
 
-# 添加 backend_dtcloud 目录到 Python 路径
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend_dtcloud'))
+# 添加 server 目录到 Python 路径
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'server'))
 
 from digital_labor.db import get_engine
 from sqlalchemy import text

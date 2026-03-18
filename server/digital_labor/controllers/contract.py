@@ -29,6 +29,7 @@ from digital_labor.services.contract_service import template_update as svc_templ
 from digital_labor.services.contract_service import template_upload_save as svc_template_upload_save
 from digital_labor.services.contract_service import template_copy as svc_template_copy
 from digital_labor.services.contract_service import template_delete as svc_template_delete
+from digital_labor.services.contract_service import verify_signature as svc_verify_signature
 from digital_labor.web.middleware import get_user, require_worker
 from digital_labor.web.response import err, ok
 
@@ -258,4 +259,13 @@ def sign_url(request: Request, contract_id: int):
     if out == "bad_status":
         return err(400, "合同已签署或已作废")
     return ok(out)
+
+
+@router.get("/{contract_id}/verify-signature")
+def verify_signature(contract_id: int):
+    result = svc_verify_signature(contract_id=contract_id)
+    if result.get("ok"):
+        return ok(result)
+    else:
+        return err(400, result.get("message"))
 
