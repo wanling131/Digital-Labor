@@ -327,8 +327,8 @@ def seed_minimal(engine: Engine) -> None:
 if __name__ == "__main__":
     import sys
     import os
-    # 添加backend_dtcloud目录到Python路径
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend_dtcloud'))
+    # 添加server目录到Python路径
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'server'))
     
     from digital_labor.db import get_engine
     engine = get_engine()

@@ -11,7 +11,7 @@ import { Card } from '@/components/ui/card'
 import { Loader2, Camera, CheckCircle, XCircle, RefreshCw } from 'lucide-react'
 
 interface FaceVerifyProps {
-  mode?: 'living' | 'compare'
+  mode?: 'living' | 'compare' | 'full'
   personId?: number
   certName?: string
   certNo?: string

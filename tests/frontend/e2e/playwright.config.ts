@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 /**
  * 浏览器 E2E 配置（本目录为浏览器自动化测试根目录）
- * 运行前请先启动后端：cd backend_dtcloud && python -m digital_labor.run
+ * 运行前请先启动后端：cd server && python -m digital_labor.run
  * 前端由 webServer 自动启动。
  */
 // 声明process变量

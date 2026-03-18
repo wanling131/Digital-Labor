@@ -393,7 +393,7 @@ export default function AttendanceReportPage() {
               <BarChart data={teamHours.length ? teamHours : [{ team: "-", totalHours: 0 }]} layout="vertical" margin={{ left: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                 <XAxis type="number" className="text-xs" />
-                <YAxis dataKey="team" type="category" width={100} className="text-xs" width={80} />
+                <YAxis dataKey="team" type="category" width={80} className="text-xs" />
                 <Tooltip
                   contentStyle={{
                     backgroundColor: "var(--card)",

@@ -36,12 +36,45 @@ def _overlay_signature_on_pdf(template_pdf_path: str, signature_img_path: str, o
         y0 = rect.height - img_height - 80
         img_rect = fitz.Rect(x0, y0, x0 + img_width, y0 + img_height)
         page.insert_image(img_rect, filename=signature_img_path)
+        
+        # 添加签名验证信息
+        import datetime
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        text = f"签名时间: {now}\n签名方式: 电子签名"
+        text_rect = fitz.Rect(x0, y0 - 40, x0 + img_width, y0 - 10)
+        page.insert_textbox(text_rect, text, fontsize=8, align=1)
+        
         os.makedirs(os.path.dirname(output_pdf_path), exist_ok=True)
         doc.save(output_pdf_path)
         doc.close()
         return True
     except Exception as e:
         logger.warning("合同 PDF 叠加签名失败: %s", e)
+        return False
+
+def _generate_signature_hash(signature_data: bytes, contract_id: int) -> str:
+    """生成签名的哈希值，用于验证签名的完整性。"""
+    try:
+        import hashlib
+        import hmac
+        from digital_labor.settings import settings
+        
+        # 使用HMAC-SHA256生成签名哈希
+        secret_key = settings.SECRET_KEY.encode('utf-8') if hasattr(settings, 'SECRET_KEY') else b'digital_labor_secret'
+        message = f"contract_{contract_id}_{signature_data}".encode('utf-8')
+        signature_hash = hmac.new(secret_key, message, hashlib.sha256).hexdigest()
+        return signature_hash
+    except Exception as e:
+        logger.warning("生成签名哈希失败: %s", e)
+        return ""
+
+def _verify_signature_hash(signature_data: bytes, contract_id: int, stored_hash: str) -> bool:
+    """验证签名的完整性。"""
+    try:
+        generated_hash = _generate_signature_hash(signature_data, contract_id)
+        return generated_hash == stored_hash
+    except Exception as e:
+        logger.warning("验证签名哈希失败: %s", e)
         return False
 
 
@@ -393,6 +426,8 @@ def sign(*, contract_id: int, person_id: int) -> str:
 
     paths = get_paths()
     sig_snapshot_abs: Optional[str] = None
+    signature_hash: str = ""
+    
     with engine.begin() as conn:
         conn.execute(
             text("UPDATE contract_instance SET status='已签署', signed_at=CURRENT_TIMESTAMP WHERE id=:id"),
@@ -405,11 +440,21 @@ def sign(*, contract_id: int, person_id: int) -> str:
             if sig and not str(sig).startswith("data:image"):
                 src_abs = os.path.abspath(os.path.join(paths.server_root, str(sig)))
                 if os.path.exists(src_abs):
+                    # 读取签名图片数据用于生成哈希
+                    with open(src_abs, 'rb') as f:
+                        signature_data = f.read()
+                    
+                    # 生成签名哈希
+                    signature_hash = _generate_signature_hash(signature_data, contract_id)
+                    
                     os.makedirs(paths.uploads_signatures_contracts, exist_ok=True)
                     dst_abs = os.path.join(paths.uploads_signatures_contracts, f"contract_{contract_id}_person_{int(row['person_id'])}.png")
                     shutil.copyfile(src_abs, dst_abs)
                     rel = os.path.relpath(dst_abs, paths.server_root).replace("\\", "/")
-                    conn.execute(text("UPDATE contract_instance SET sign_image_snapshot=:p WHERE id=:id"), {"p": rel, "id": contract_id})
+                    conn.execute(
+                        text("UPDATE contract_instance SET sign_image_snapshot=:p, signature_hash=:h WHERE id=:id"), 
+                        {"p": rel, "h": signature_hash, "id": contract_id}
+                    )
                     sig_snapshot_abs = dst_abs
         except (OSError, shutil.Error) as e:
             logger.warning("签名图片复制失败 contract_id=%s person_id=%s: %s", contract_id, row.get("person_id"), e)
@@ -492,4 +537,44 @@ def sign_url(*, contract_id: int, person_id: int) -> Union[str, dict]:
     if row["status"] != "待签署":
         return "bad_status"
     return {"ok": True, "local": True, "message": "使用本地签署流程"}
+
+
+def verify_signature(*, contract_id: int) -> dict:
+    """验证合同签名的完整性和真实性。"""
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT person_id, status, signature_hash, sign_image_snapshot FROM contract_instance WHERE id=:id"), 
+            {"id": contract_id}
+        ).mappings().first()
+    
+    if not row:
+        return {"ok": False, "message": "合同不存在"}
+    
+    if row["status"] != "已签署":
+        return {"ok": False, "message": "合同未签署"}
+    
+    if not row.get("signature_hash") or not row.get("sign_image_snapshot"):
+        return {"ok": False, "message": "签名信息不完整"}
+    
+    # 验证签名哈希
+    paths = get_paths()
+    sig_path = os.path.abspath(os.path.join(paths.server_root, str(row["sign_image_snapshot"])))
+    
+    if not os.path.exists(sig_path):
+        return {"ok": False, "message": "签名图片不存在"}
+    
+    try:
+        with open(sig_path, 'rb') as f:
+            signature_data = f.read()
+        
+        is_valid = _verify_signature_hash(signature_data, contract_id, row["signature_hash"])
+        
+        if is_valid:
+            return {"ok": True, "message": "签名验证成功", "signature_hash": row["signature_hash"]}
+        else:
+            return {"ok": False, "message": "签名验证失败，签名可能被篡改"}
+    except Exception as e:
+        logger.warning("验证签名失败 contract_id=%s: %s", contract_id, e)
+        return {"ok": False, "message": "验证过程出错"}
 

@@ -87,7 +87,7 @@ export default function SalaryPage() {
         apiWorker<{ list: unknown[] }>("/api/settlement/my"),
       ])
       setPendingList(pendingRes.list || [])
-      setSalaryRecords((myRes.list || []).map((s: Record<string, unknown>) => mapSettlement(s as Parameters<typeof mapSettlement>[0])))
+      setSalaryRecords((myRes.list || []).map((s) => mapSettlement(s as Parameters<typeof mapSettlement>[0])))
       if (typeof window !== "undefined") {
         window.localStorage.setItem("h5_pending_settlement_cache", JSON.stringify(pendingRes.list || []))
         window.localStorage.setItem("h5_salary_records_cache", JSON.stringify(myRes.list || []))

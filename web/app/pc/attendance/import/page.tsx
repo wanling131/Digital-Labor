@@ -88,15 +88,15 @@ export default function AttendanceImportPage() {
       setImportHistory(
         (res.list || []).map((r) => ({
           id: r.id,
-          fileName: r.fileName ?? r.file_name ?? "",
+          fileName: (r as any).fileName ?? (r as any).file_name ?? "",
           project: r.project ?? "-",
           period: r.period ?? "-",
-          totalRecords: r.totalRecords ?? r.total_records ?? 0,
-          validRecords: r.validRecords ?? r.valid_records ?? 0,
-          duplicateRecords: r.duplicateRecords ?? r.duplicate_records ?? 0,
-          errorRecords: r.errorRecords ?? r.error_records ?? 0,
+          totalRecords: (r as any).totalRecords ?? (r as any).total_records ?? 0,
+          validRecords: (r as any).validRecords ?? (r as any).valid_records ?? 0,
+          duplicateRecords: (r as any).duplicateRecords ?? (r as any).duplicate_records ?? 0,
+          errorRecords: (r as any).errorRecords ?? (r as any).error_records ?? 0,
           status: r.status ?? "completed",
-          importTime: r.importTime ?? r.import_time ?? "-",
+          importTime: (r as any).importTime ?? (r as any).import_time ?? "-",
           operator: r.operator ?? "管理员",
         }))
       )

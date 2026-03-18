@@ -26,7 +26,7 @@ interface TemplateData {
   variables: TemplateVariable[]
 }
 
-export default function TemplateEditPage() {
+export default function TemplateEditNewPage() {
   const [template, setTemplate] = useState<TemplateData>({
     name: "",
     content: "",
@@ -36,12 +36,6 @@ export default function TemplateEditPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
-
-  useEffect(() => {
-    // 这里可以根据路由参数加载模板数据
-    // 例如：const { templateId } = useParams()
-    // if (templateId) loadTemplate(templateId)
-  }, [])
 
   const handleAddVariable = () => {
     setTemplate(prev => ({
@@ -83,11 +77,13 @@ export default function TemplateEditPage() {
     setSuccess(null)
 
     try {
-      // 这里可以调用API保存模板
-      // 例如：await api("/api/contract/template", { method: "POST", body: template })
-      // 模拟API调用
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      setSuccess("模板保存成功")
+      // 调用API保存新模板
+      const response = await api<TemplateData>("/api/contract/template", {
+        method: "POST",
+        body: template
+      })
+      setSuccess("模板创建成功")
+      // 可以在这里添加重定向逻辑
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存失败")
     } finally {
@@ -99,8 +95,8 @@ export default function TemplateEditPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">模板编辑</h1>
-          <p className="text-muted-foreground">创建或编辑可视化合同模板</p>
+          <h1 className="text-2xl font-bold text-foreground">创建模板</h1>
+          <p className="text-muted-foreground">创建新的可视化合同模板</p>
         </div>
         <Button onClick={handleSave} disabled={saving}>
           {saving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}

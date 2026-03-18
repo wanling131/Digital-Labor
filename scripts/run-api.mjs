@@ -8,7 +8,7 @@ const reload = args.includes('--reload')
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-const cwd = path.resolve(__dirname, '..', 'backend_dtcloud')
+const cwd = path.resolve(__dirname, '..', 'server')
 
 const env = {
   ...process.env,

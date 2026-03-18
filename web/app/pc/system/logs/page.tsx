@@ -103,7 +103,7 @@ export default function LogsPage() {
       const res = await api<{ list: unknown[]; total: number }>("/api/sys/log", {
         query: { page, pageSize },
       })
-      setLogs((res.list || []).map((row: Record<string, unknown>) => mapLogRow(row as Parameters<typeof mapLogRow>[0])))
+      setLogs((res.list || []).map((row) => mapLogRow(row as Parameters<typeof mapLogRow>[0])))
       setTotal(res.total ?? 0)
     } catch {
       setLogs([])

@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-POSTGRES_SCHEMA_PATH = ROOT / "backend_dtcloud" / "scripts" / "postgres_schema.sql"
+POSTGRES_SCHEMA_PATH = ROOT / "server" / "scripts" / "postgres_schema.sql"
 
 
 def check_postgres_installed() -> bool:
