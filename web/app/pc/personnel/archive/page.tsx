@@ -210,8 +210,6 @@ export default function PersonnelArchivePage() {
   }
 
   const handleEdit = (row: (typeof list)[0]) => {
-    alert('Editing person: ' + row.name)
-    console.log('Editing person:', row)
     setEditId(row.id)
     setFormData({
       org_id: row.org_id ?? "",
@@ -223,8 +221,6 @@ export default function PersonnelArchivePage() {
       job_title: row.job_title ?? "",
     })
     setIsEditDialogOpen(true)
-    console.log('Edit dialog should be open now')
-    alert('Edit dialog should be open now')
   }
 
   const handleUpdate = async () => {
