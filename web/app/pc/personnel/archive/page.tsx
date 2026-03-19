@@ -210,6 +210,8 @@ export default function PersonnelArchivePage() {
   }
 
   const handleEdit = (row: (typeof list)[0]) => {
+    alert('Editing person: ' + row.name)
+    console.log('Editing person:', row)
     setEditId(row.id)
     setFormData({
       org_id: row.org_id ?? "",
@@ -221,6 +223,8 @@ export default function PersonnelArchivePage() {
       job_title: row.job_title ?? "",
     })
     setIsEditDialogOpen(true)
+    console.log('Edit dialog should be open now')
+    alert('Edit dialog should be open now')
   }
 
   const handleUpdate = async () => {
@@ -796,30 +800,20 @@ export default function PersonnelArchivePage() {
                     </TableCell>
                     <TableCell className="text-muted-foreground align-middle">{(person.created_at ?? "").slice(0, 10)}</TableCell>
                     <TableCell className="text-right align-middle">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          {hasPermission("person:edit") && (
-                          <DropdownMenuItem className="gap-2" onClick={() => handleEdit(person)}>
-                            <Edit className="h-4 w-4" />
-                            编辑信息
-                          </DropdownMenuItem>
-                          )}
-                          {hasPermission("person:delete") && (
-                          <DropdownMenuItem
-                            className="gap-2 text-destructive"
-                            onClick={() => handleDelete(person.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            删除
-                          </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <div className="flex gap-2 justify-end">
+                        {hasPermission("person:edit") && (
+                        <Button variant="ghost" size="sm" onClick={() => handleEdit(person)}>
+                          <Edit className="h-4 w-4" />
+                          编辑
+                        </Button>
+                        )}
+                        {hasPermission("person:delete") && (
+                        <Button variant="ghost" size="sm" className="text-destructive" onClick={() => handleDelete(person.id)}>
+                          <Trash2 className="h-4 w-4" />
+                          删除
+                        </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))

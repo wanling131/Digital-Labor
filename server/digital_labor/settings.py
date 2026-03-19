@@ -66,9 +66,33 @@ def _validate_prod_secrets() -> None:
     env = os.getenv("ENV", "").strip().lower()
     if env != "prod" and env != "production":
         return
+    
+    errors = []
+    
     if not settings.jwt_secret or settings.jwt_secret == _DEFAULT_JWT_SECRET:
+        errors.append(
+            "JWT_SECRET 环境变量必须设置且不能使用默认值。"
+            "请生成随机密钥：openssl rand -hex 32"
+        )
+    
+    if not settings.encryption_key:
+        errors.append(
+            "ENCRYPTION_KEY 环境变量必须设置用于加密敏感数据。"
+            "请生成随机密钥：openssl rand -hex 32"
+        )
+    
+    if settings.database_url and "postgres:postgres@" in settings.database_url:
+        errors.append(
+            "DATABASE_URL 包含默认密码，生产环境必须使用强密码。"
+        )
+    
+    if settings.cors_allow_origins == "*":
+        errors.append(
+            "CORS_ALLOW_ORIGINS 设置为 '*' 允许所有来源，生产环境应配置具体域名。"
+        )
+    
+    if errors:
         raise RuntimeError(
-            "生产环境必须设置 JWT_SECRET 环境变量，且不能使用默认值。"
-            "请生成随机密钥并配置：export JWT_SECRET='your-secure-random-secret'"
+            "生产环境安全配置检查失败：\n" + "\n".join(f"  - {e}" for e in errors)
         )
 

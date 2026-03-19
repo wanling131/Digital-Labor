@@ -73,7 +73,7 @@ const typeConfig = {
   team: { label: "班组", color: "bg-chart-4 text-foreground" },
 }
 
-function OrgTreeNode({ node, level = 0, onDelete, onAddChild }: { node: OrgNode; level?: number; onDelete: (id: string) => void; onAddChild: (parentId: string) => void }) {
+function OrgTreeNode({ node, level = 0, onDelete, onAddChild, onEdit }: { node: OrgNode; level?: number; onDelete: (id: string) => void; onAddChild: (parentId: string) => void; onEdit: (org: OrgNode) => void }) {
   const [expanded, setExpanded] = useState(node.expanded ?? false)
   const hasChildren = node.children && node.children.length > 0
   const config = typeConfig[node.type]
@@ -114,7 +114,7 @@ function OrgTreeNode({ node, level = 0, onDelete, onAddChild }: { node: OrgNode;
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onEdit(node)}>
               <Edit className="h-4 w-4 mr-2" />
               编辑
             </DropdownMenuItem>
@@ -132,7 +132,7 @@ function OrgTreeNode({ node, level = 0, onDelete, onAddChild }: { node: OrgNode;
       {expanded && hasChildren && (
         <div>
           {node.children!.map((child) => (
-            <OrgTreeNode key={child.id} node={child} level={level + 1} onDelete={onDelete} onAddChild={onAddChild} />
+            <OrgTreeNode key={child.id} node={child} level={level + 1} onDelete={onDelete} onAddChild={onAddChild} onEdit={onEdit} />
           ))}
         </div>
       )}
@@ -146,13 +146,20 @@ export default function OrganizationPage() {
   const [loading, setLoading] = useState(true)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [isAddChildOpen, setIsAddChildOpen] = useState(false)
+  const [isEditOpen, setIsEditOpen] = useState(false)
   const [newOrg, setNewOrg] = useState({
     name: "",
     type: "company" as OrgNode["type"],
     parentId: "root",
     manager: ""
   })
+  const [editOrg, setEditOrg] = useState({
+    name: "",
+    type: "company" as OrgNode["type"],
+    manager: ""
+  })
   const [currentParentId, setCurrentParentId] = useState("root")
+  const [currentEditId, setCurrentEditId] = useState("root")
 
   const loadOrg = useCallback(async () => {
     try {
@@ -241,6 +248,42 @@ export default function OrganizationPage() {
       console.error("创建组织失败:", error)
     }
   }, [newOrg, loadOrg])
+
+  const openEdit = useCallback((org: OrgNode) => {
+    setCurrentEditId(org.id)
+    setEditOrg({
+      name: org.name,
+      type: org.type,
+      manager: org.manager
+    })
+    setIsEditOpen(true)
+  }, [])
+
+  const updateOrg = useCallback(async () => {
+    if (!editOrg.name) return
+    try {
+      await api(`/api/sys/org/${currentEditId}`, {
+        method: "PUT",
+        body: {
+          name: editOrg.name,
+          type: editOrg.type,
+          manager: editOrg.manager
+        }
+      })
+      // Reset form
+      setEditOrg({
+        name: "",
+        type: "company",
+        manager: ""
+      })
+      // Close dialog
+      setIsEditOpen(false)
+      // Reload org tree
+      loadOrg()
+    } catch (error) {
+      console.error("更新组织失败:", error)
+    }
+  }, [editOrg, currentEditId, loadOrg])
 
   useEffect(() => {
     loadOrg()
@@ -383,6 +426,54 @@ export default function OrganizationPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>编辑组织</DialogTitle>
+              <DialogDescription>修改组织节点的信息</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label>组织名称</Label>
+                <Input 
+                  placeholder="请输入组织名称" 
+                  value={editOrg.name}
+                  onChange={(e) => setEditOrg({ ...editOrg, name: e.target.value })}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>组织类型</Label>
+                <Select 
+                  value={editOrg.type}
+                  onValueChange={(value) => setEditOrg({ ...editOrg, type: value as OrgNode["type"] })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="选择组织类型" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="company">公司</SelectItem>
+                    <SelectItem value="department">分公司</SelectItem>
+                    <SelectItem value="project">项目部</SelectItem>
+                    <SelectItem value="team">班组</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>负责人</Label>
+                <Input 
+                  placeholder="请输入负责人姓名" 
+                  value={editOrg.manager}
+                  onChange={(e) => setEditOrg({ ...editOrg, manager: e.target.value })}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsEditOpen(false)}>取消</Button>
+              <Button onClick={updateOrg}>确认更新</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <div className="grid gap-6 md:grid-cols-4">
@@ -454,7 +545,7 @@ export default function OrganizationPage() {
               <p className="text-sm text-muted-foreground py-4 text-center">暂无组织数据，请先执行种子或创建组织</p>
             ) : (
               orgTree.map((node) => (
-                <OrgTreeNode key={node.id} node={node} onDelete={deleteOrg} onAddChild={openAddChild} />
+                <OrgTreeNode key={node.id} node={node} onDelete={deleteOrg} onAddChild={openAddChild} onEdit={openEdit} />
               ))
             )}
           </div>
