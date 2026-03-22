@@ -22,16 +22,6 @@ digital-labor/
 │   ├── requirements-fastapi.txt # 仅 FastAPI 依赖（dtcloud 安装失败时可用）
 │   └── README.md
 │
-├── server-legacy/              # 旧后端（Node/Express/SQLite，仅用于对照/归档）
-│   ├── routes/
-│   ├── db/
-│   ├── middleware/
-│   ├── lib/
-│   ├── docs/                   # 接口文档 API.md
-│   ├── app.js
-│   ├── server.js
-│   └── package.json
-│
 ├── scripts/                    # 项目级脚本
 │   ├── connectivity-test.mjs   # 前后端连通性测试
 │   └── README.md
@@ -49,7 +39,7 @@ digital-labor/
 └── README.md                   # 本文件
 ```
 
-- **前端**：Next.js，开发端口 3001，生产构建后由 Nginx/OSS 等托管。
+- **前端**：Next.js，开发端口 3002，生产构建后由 Nginx/OSS 等托管。
 - **后端**：仅提供 REST API（`/api/*`），默认端口 3000；主线后端为 **Python 3.8 + PostgreSQL**（兼容旧接口），旧 Node 后端仅对照/归档。
 
 ---
@@ -62,7 +52,7 @@ digital-labor/
 npm run install:all
 ```
 
-会依次安装：根目录、server-legacy（旧后端）、web（前端）、**server（Python 后端）** 的依赖。
+会依次安装：根目录、web（前端）、server（Python 后端）的依赖。
 
 如需使用虚拟环境隔离 Python 依赖，可手动创建：
 
@@ -81,9 +71,8 @@ pip install -r requirements-fastapi.txt
 npm run dev
 ```
 
-- 仅后端：`npm run dev:api` → API: http://localhost:3000  
-- 仅前端：`npm run dev:web` → 前端: http://localhost:3001  
-- 旧后端（对照）：`npm run dev:server:legacy`
+- 仅后端：`npm run dev:api` → API: http://localhost:3000
+- 仅前端：`npm run dev:web` → 前端: http://localhost:3002
 
 ### 3. 默认账号
 
@@ -98,7 +87,7 @@ npm run dev
 |------|------|
 | `npm run dev` | 同时启动后端与前端（开发） |
 | `npm run dev:api` | 仅启动后端 API（Python，3000） |
-| `npm run dev:web` | 仅启动前端（3001） |
+| `npm run dev:web` | 仅启动前端（3002） |
 | `npm run build` / `npm run build:web` | 构建前端（Next.js 产出在 web/.next） |
 | `npm run start` / `npm run start:api` | 生产模式启动后端（Python） |
 | `npm run test` / `npm run test:server` | 新后端兼容检查（需先启动后端） |
@@ -106,12 +95,6 @@ npm run dev
 | `npm run test:connectivity` | 前后端连通性测试（需先启动后端，可选启动前端） |
 | `npm run test:all` | 统一测试：先后端测试，再前端构建 |
 | `npm run seed` | PostgreSQL 一键建表/导入 Excel/补种子数据（用于临时环境） |
-
-旧后端脚本（对照/归档）：
-
-- `npm run start:server:legacy`
-- `npm run test:server:legacy`
-- `npm run seed:legacy`
 
 ---
 
@@ -123,7 +106,7 @@ npm run dev
 | [docs/部署说明.md](docs/部署说明.md) | 前后端分离、构建、生产部署、Nginx 示例 |
 | [docs/开发规范.md](docs/开发规范.md) | 目录约定、后端/前端规范、接口文档位置 |
 | [docs/环境变量示例.md](docs/环境变量示例.md) | PORT、JWT_SECRET 等环境变量说明 |
-| [server/docs/API.md](server/docs/API.md) | 后端接口清单，供前端对接 |
+| [docs/API.md](docs/API.md) | 后端接口清单，供前端对接 |
 
 ---
 
@@ -139,5 +122,5 @@ npm run dev
 
 - 前端：Next.js 16、React 19、TypeScript、Tailwind CSS（PC 管理端 + H5 工人端共用一套工程）  
 - 后端（主线）：Python 3.8、FastAPI（兼容层）、dtcloud（路由层）、PostgreSQL、JWT  
-- 后端（legacy）：Node.js 18+、Express、SQLite（better-sqlite3）、JWT  
+- 后端（历史）：曾用 Node.js + Express + SQLite；**当前仓库主线为 Python 后端**，旧 Node 实现已不在本仓库维护。  
 - 功能范围与实现进度见 **功能点/需求与实现对比.md**。

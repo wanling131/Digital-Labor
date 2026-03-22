@@ -39,10 +39,10 @@ python -m digital_labor.run
 
 ### 接口兼容检查（仅新后端）
 
-在新后端已启动的前提下（例如 `http://localhost:3002`）：
+在新后端已启动的前提下（API 默认 `http://localhost:3000`）：
 
 ```bash
-python scripts/compat_check.py --new http://localhost:3002 --new-only
+python scripts/compat_check.py --new http://localhost:3000 --new-only
 ```
 
 通过则输出：`[OK] health`、`[OK] api_root`、`[OK] login_admin`、`[OK] feature_status`。若数据库未启动，`login_admin` 会得到 503 而非超时。

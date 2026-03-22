@@ -42,6 +42,9 @@ Thumbs.db
 .idea/
 .vscode/
 
+# 本地 AI/IDE 配置（勿提交密钥）
+.claude/
+
 # 第三方/示例（不推送）
 awesome-claude-skills/
 

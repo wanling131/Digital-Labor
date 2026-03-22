@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
  * 前后端连通性测试（需先启动后端，可选启动前端）
- * 用法：先执行 npm run dev:server，再在另一终端执行 node scripts/connectivity-test.mjs
+ * 用法：先执行 npm run dev:api（后端 3000），再在另一终端执行 node scripts/connectivity-test.mjs
  * 或：npm run test:connectivity
  */
 
 const API_BASE = process.env.API_BASE || 'http://localhost:3000'
-const WEB_BASE = process.env.WEB_BASE || 'http://localhost:3001'
+const WEB_BASE = process.env.WEB_BASE || 'http://localhost:3002'
 
 async function check(name, url, checkBody = null) {
   try {
@@ -54,7 +54,7 @@ async function main() {
     webOk = res.status === 200 || res.status === 307 || res.status === 308
     console.log(webOk ? '✓ 前端首页可访问' : `✗ 前端首页 (${res.status})`)
   } catch (e) {
-    console.log('✗ 前端首页 (未启动或端口非 3001)', e.message)
+    console.log('✗ 前端首页 (未启动或与 WEB_BASE 端口不一致，开发默认 3002)', e.message)
   }
 
   console.log('')
@@ -62,7 +62,7 @@ async function main() {
   if (apiOk) {
     console.log('后端连通性: 通过')
   } else {
-    console.log('后端连通性: 未通过，请先执行 npm run dev:server')
+    console.log('后端连通性: 未通过，请先执行 npm run dev:api（或 cd server && python -m digital_labor.run）')
     process.exit(1)
   }
   if (webOk) {
