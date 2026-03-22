@@ -58,9 +58,9 @@ def _generate_signature_hash(signature_data: bytes, contract_id: int) -> str:
         import hashlib
         import hmac
         from digital_labor.settings import settings
-        
-        # 使用HMAC-SHA256生成签名哈希
-        secret_key = settings.SECRET_KEY.encode('utf-8') if hasattr(settings, 'SECRET_KEY') else b'digital_labor_secret'
+
+        # 使用HMAC-SHA256生成签名哈希，使用 jwt_secret 作为密钥
+        secret_key = settings.jwt_secret.encode('utf-8')
         message = f"contract_{contract_id}_{signature_data}".encode('utf-8')
         signature_hash = hmac.new(secret_key, message, hashlib.sha256).hexdigest()
         return signature_hash

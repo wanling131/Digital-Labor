@@ -6,6 +6,7 @@ from typing import Optional
 from sqlalchemy import text
 
 from digital_labor.auth.jwt import sign_token
+from digital_labor.auth.passwords import verify_password, is_bcrypt_hash
 from digital_labor.db import get_engine
 from digital_labor.settings import settings
 
@@ -28,27 +29,26 @@ def admin_login(username: str, password: str) -> Optional[AuthResult]:
         row = conn.execute(
             text(
                 """
-                SELECT id, username, name, role
+                SELECT id, username, name, role, password_hash
                 FROM "user"
-                WHERE username = :u AND password_hash = :p AND enabled = 1
+                WHERE username = :u AND enabled = 1
                 """
             ),
-            {"u": u, "p": p},
+            {"u": u},
         ).mappings().first()
-        if not row and u == "admin" and p == "admin123":
-            row = conn.execute(
-                text(
-                    """
-                    SELECT id, username, name, role
-                    FROM "user"
-                    WHERE username = :u AND password_hash = :p AND enabled = 1
-                    """
-                ),
-                {"u": u, "p": "123456"},
-            ).mappings().first()
 
     if not row:
         return None
+
+    # 验证密码：支持 bcrypt 哈希和旧版明文（兼容迁移）
+    stored_hash = row["password_hash"] or ""
+    if is_bcrypt_hash(stored_hash):
+        if not verify_password(p, stored_hash):
+            return None
+    else:
+        # 旧版明文密码（仅用于兼容，生产环境应迁移到 bcrypt）
+        if p != stored_hash:
+            return None
 
     token = sign_token({"userId": int(row["id"]), "username": row["username"], "role": row["role"]})
     return AuthResult(
@@ -72,10 +72,15 @@ def worker_login(*, person_id: Optional[int], work_no: Optional[str], name: Opti
                 # 严格依赖已有数据，避免通过错误密码暴露手机号是否存在
                 return None
             # 先校验密码，再确认人员 ID，避免通过行为差异枚举已存在手机号
-            # 如果配置了演示密码，则必须匹配；否则允许无密码登录
+            # 密码验证逻辑：
+            # - 没有密码或空密码：允许登录（兼容原有行为）
+            # - 配置了演示密码且密码不匹配：拒绝登录
+            # - 未配置演示密码但提供了密码：拒绝登录（安全默认）
             demo_pwd = settings.worker_demo_password
-            if demo_pwd and password is not None and str(password).strip() != "" and str(password).strip() != demo_pwd:
-                return None
+            provided_pwd = str(password).strip() if password else ""
+            if provided_pwd:  # 提供了非空密码
+                if not demo_pwd or provided_pwd != demo_pwd:
+                    return None
             pid = int(row["id"])
 
         if not pid and (work_no or name):
