@@ -144,4 +144,27 @@ def run_all_migrations() -> None:
     run_attendance_overtime_migration()
     run_role_org_scope_migration()
     ensure_user_role_has_export_permission()
+    run_performance_indexes()
     logger.info("All migrations completed")
+
+
+def run_performance_indexes() -> None:
+    """创建性能优化索引（幂等，已存在则跳过）。"""
+    engine = get_engine()
+    indexes = [
+        "CREATE INDEX IF NOT EXISTS idx_person_mobile ON person(mobile)",
+        "CREATE INDEX IF NOT EXISTS idx_person_name ON person(name)",
+        "CREATE INDEX IF NOT EXISTS idx_person_id_card ON person(id_card)",
+        "CREATE INDEX IF NOT EXISTS idx_op_log_created_at ON op_log(created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_attendance_org_id ON attendance(org_id)",
+        "CREATE INDEX IF NOT EXISTS idx_settlement_status ON settlement(status)",
+    ]
+    with engine.connect() as conn:
+        for idx_sql in indexes:
+            try:
+                conn.execute(text(idx_sql))
+                conn.commit()
+                logger.info("Migration: created index - %s", idx_sql.split("ON")[1].strip() if "ON" in idx_sql else idx_sql[:50])
+            except Exception as e:  # noqa: BLE001
+                logger.debug("Index migration skipped: %s", e)
+    logger.info("Migration: performance indexes ensured")

@@ -1,11 +1,23 @@
 from __future__ import annotations
 
+import logging
 import platform
-from typing import Any, Dict, Tuple
+import re
+from typing import Any, Dict, List, Tuple
 
 from sqlalchemy import text
 
 from digital_labor.db import get_engine
+
+logger = logging.getLogger(__name__)
+
+# 允许查询的系统表白名单（防止意外查询敏感表）
+ALLOWED_TABLE_PATTERN = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+
+
+def _is_valid_table_name(name: str) -> bool:
+    """验证表名是否安全（只允许字母、数字、下划线）"""
+    return bool(ALLOWED_TABLE_PATTERN.match(name))
 
 
 def health() -> Tuple[Dict[str, Any], int]:
@@ -27,9 +39,12 @@ def database_stats() -> dict:
             tables = conn.execute(
                 text("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
             ).mappings().all()
-            stats = []
+            stats: List[Dict[str, Any]] = []
             for t in tables:
                 name = t["name"]
+                if not _is_valid_table_name(name):
+                    logger.warning("Skipping invalid table name: %s", name)
+                    continue
                 cnt = conn.execute(text(f'SELECT COUNT(*) FROM "{name}"')).scalar_one()
                 stats.append({"name": name, "rowCount": int(cnt)})
             idx_cnt = conn.execute(text("SELECT COUNT(*) FROM sqlite_master WHERE type='index'")).scalar_one()
@@ -46,9 +61,12 @@ def database_stats() -> dict:
                 """
             )
         ).mappings().all()
-        stats = []
+        stats: List[Dict[str, Any]] = []
         for t in tables:
             name = t["table_name"]
+            if not _is_valid_table_name(name):
+                logger.warning("Skipping invalid table name: %s", name)
+                continue
             cnt = conn.execute(text(f'SELECT COUNT(*) FROM "{name}"')).scalar_one()
             stats.append({"name": name, "rowCount": int(cnt)})
         idx_cnt = conn.execute(text("SELECT COUNT(*) FROM pg_indexes WHERE schemaname='public'")).scalar_one()

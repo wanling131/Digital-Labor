@@ -238,5 +238,13 @@ CREATE INDEX IF NOT EXISTS idx_site_log_created_at ON site_log(created_at);
 CREATE INDEX IF NOT EXISTS idx_clock_log_person_id ON clock_log(person_id);
 CREATE INDEX IF NOT EXISTS idx_clock_log_punch_at ON clock_log(punch_at);
 
+-- 额外性能优化索引
+CREATE INDEX IF NOT EXISTS idx_person_mobile ON person(mobile);
+CREATE INDEX IF NOT EXISTS idx_person_name ON person(name);
+CREATE INDEX IF NOT EXISTS idx_person_id_card ON person(id_card);
+CREATE INDEX IF NOT EXISTS idx_op_log_created_at ON op_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_attendance_org_id ON attendance(org_id);
+CREATE INDEX IF NOT EXISTS idx_settlement_status ON settlement(status);
+
 COMMIT;
 

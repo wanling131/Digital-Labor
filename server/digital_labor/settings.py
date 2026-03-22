@@ -57,6 +57,10 @@ class Settings:
     # Redis 缓存配置
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
+    # 工人端演示密码（仅开发环境使用，生产环境应禁用或设置强密码）
+    # 设置为空字符串可禁用演示密码登录
+    worker_demo_password: str = os.getenv("WORKER_DEMO_PASSWORD", "")
+
 
 settings = Settings()
 
@@ -95,4 +99,8 @@ def _validate_prod_secrets() -> None:
         raise RuntimeError(
             "生产环境安全配置检查失败：\n" + "\n".join(f"  - {e}" for e in errors)
         )
+
+
+# 模块加载时自动执行生产环境安全检查
+_validate_prod_secrets()
 

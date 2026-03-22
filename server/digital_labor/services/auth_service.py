@@ -7,6 +7,7 @@ from sqlalchemy import text
 
 from digital_labor.auth.jwt import sign_token
 from digital_labor.db import get_engine
+from digital_labor.settings import settings
 
 
 @dataclass(frozen=True)
@@ -56,9 +57,6 @@ def admin_login(username: str, password: str) -> Optional[AuthResult]:
     )
 
 
-WORKER_DEMO_PASSWORD = "123456"
-
-
 def worker_login(*, person_id: Optional[int], work_no: Optional[str], name: Optional[str], mobile: Optional[str], password: Optional[str]) -> Optional[AuthResult]:
     engine = get_engine()
     pid: Optional[int] = int(person_id) if person_id else None
@@ -74,7 +72,9 @@ def worker_login(*, person_id: Optional[int], work_no: Optional[str], name: Opti
                 # 严格依赖已有数据，避免通过错误密码暴露手机号是否存在
                 return None
             # 先校验密码，再确认人员 ID，避免通过行为差异枚举已存在手机号
-            if password is not None and str(password).strip() != "" and str(password).strip() != WORKER_DEMO_PASSWORD:
+            # 如果配置了演示密码，则必须匹配；否则允许无密码登录
+            demo_pwd = settings.worker_demo_password
+            if demo_pwd and password is not None and str(password).strip() != "" and str(password).strip() != demo_pwd:
                 return None
             pid = int(row["id"])
 

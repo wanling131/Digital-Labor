@@ -39,7 +39,7 @@ from digital_labor.services.person_service import (
     status_batch as svc_status_batch,
     status_counts as svc_status_counts,
 )
-from digital_labor.web.middleware import get_user, require_permission
+from digital_labor.web.middleware import get_user, require_permission, require_worker
 from digital_labor.web.response import err, ok
 
 

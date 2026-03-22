@@ -27,6 +27,7 @@ database/*.sqlite
 .env
 .env.local
 .env.*.local
+!.env.example
 *.log
 
 # 前端构建产物
@@ -42,3 +43,6 @@ Thumbs.db
 
 # 第三方/示例（不推送）
 awesome-claude-skills/
+
+# 本地测试脚本（不推送）
+local_tests/

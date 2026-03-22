@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
+import time
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,17 +26,56 @@ from digital_labor.settings import settings
 from digital_labor.web.middleware import AuthMiddleware
 
 
+def setup_logging() -> None:
+    """配置日志格式和级别。"""
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+
+    # 配置根日志
+    logging.basicConfig(
+        level=getattr(logging, log_level, logging.INFO),
+        format=log_format,
+        handlers=[logging.StreamHandler(sys.stdout)],
+    )
+
+    # 降低第三方库日志级别
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="Digital Labor API", description="与前端兼容的 REST API（FastAPI + PostgreSQL）")
 
     @app.exception_handler(Exception)
     def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
         """未捕获异常统一返回 500 JSON，避免挂起或暴露堆栈。"""
-        logging.exception("Unhandled exception: %s", exc)
+        logging.exception("Unhandled exception at %s: %s", request.url.path, exc)
         return JSONResponse(
             status_code=500,
             content={"code": "INTERNAL_ERROR", "message": "服务暂时不可用，请稍后重试"},
         )
+
+    @app.middleware("http")
+    async def log_requests(request: Request, call_next):
+        """请求日志中间件，记录请求耗时。"""
+        # 跳过健康检查和静态资源的日志
+        if request.url.path in ("/api/health", "/favicon.ico") or request.url.path.startswith("/uploads/"):
+            return await call_next(request)
+
+        start_time = time.time()
+        response = await call_next(request)
+        process_time = time.time() - start_time
+
+        # 只记录慢请求(>1s)或非2xx响应
+        if process_time > 1.0 or response.status_code >= 400:
+            logging.getLogger("api.request").warning(
+                "%s %s - %d - %.3fs",
+                request.method,
+                request.url.path,
+                response.status_code,
+                process_time,
+            )
+        return response
 
     @app.on_event("startup")
     def startup_check() -> None:
@@ -84,6 +125,11 @@ def create_app() -> FastAPI:
             except Exception as e:  # noqa: BLE001
                 logging.warning("Migration run_role_org_scope failed: %s", e)
             try:
+                from digital_labor.db_migrations import run_performance_indexes
+                run_performance_indexes()
+            except Exception as e:  # noqa: BLE001
+                logging.warning("Migration run_performance_indexes failed: %s", e)
+            try:
                 from digital_labor.services.sys_admin_service import seed_op_log_if_empty
                 seed_op_log_if_empty()
             except Exception as e:  # noqa: BLE001
@@ -122,6 +168,11 @@ def create_app() -> FastAPI:
 
 
 def main() -> None:
+    # 配置日志
+    setup_logging()
+    logger = logging.getLogger(__name__)
+    logger.info("Starting Digital Labor API server on port %d", settings.port)
+
     # dtcloud 原生启动方式后续会接入；目前先用 uvicorn 跑通最小可用 API。
     import uvicorn
 
@@ -131,6 +182,7 @@ def main() -> None:
         port=settings.port,
         factory=True,
         reload=os.getenv("RELOAD", "0") == "1",
+        log_level=os.getenv("LOG_LEVEL", "info").lower(),
     )
 
 

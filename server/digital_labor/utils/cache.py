@@ -4,18 +4,24 @@ import json
 import time
 from typing import Any, Dict, Optional
 
-import redis
+try:
+    import redis
+    REDIS_AVAILABLE = True
+except ImportError:
+    redis = None  # type: ignore
+    REDIS_AVAILABLE = False
 
 
 class CacheManager:
     """缓存管理器，支持内存缓存和Redis缓存"""
-    
+
     def __init__(self, default_ttl: int = 60, redis_url: Optional[str] = None):
         self._cache: Dict[str, tuple[float, Any]] = {}
         self._default_ttl = default_ttl
         self._redis_client = None
-        
-        if redis_url:
+
+        # 只有在 redis 模块可用且配置了 redis_url 时才尝试连接
+        if REDIS_AVAILABLE and redis_url and redis is not None:
             try:
                 self._redis_client = redis.from_url(redis_url, decode_responses=True)
                 self._redis_client.ping()

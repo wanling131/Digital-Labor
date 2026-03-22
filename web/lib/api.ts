@@ -18,6 +18,11 @@ const API_BASE =
 const TOKEN_KEY = 'labor_token'
 const WORKER_TOKEN_KEY = 'labor_worker_token'
 
+// 请求配置
+const DEFAULT_TIMEOUT = 30000 // 30秒超时
+const MAX_RETRIES = 2 // 最大重试次数
+const RETRY_DELAY = 1000 // 重试延迟（毫秒）
+
 /** P2 系统嵌入：租户 ID，通过 NEXT_PUBLIC_TENANT_ID 注入 */
 export function getTenantId(): string | null {
   return process.env.NEXT_PUBLIC_TENANT_ID ?? null
@@ -46,7 +51,12 @@ export function setWorkerToken(token: string | null): void {
   else localStorage.removeItem(WORKER_TOKEN_KEY)
 }
 
-type ApiOptions = Omit<RequestInit, 'body'> & { body?: object | FormData; query?: Record<string, string | number> }
+type ApiOptions = Omit<RequestInit, 'body'> & {
+  body?: object | FormData
+  query?: Record<string, string | number>
+  timeout?: number // 请求超时时间（毫秒）
+  retries?: number // 重试次数
+}
 
 type TokenConfig = {
   getToken: () => string | null
@@ -55,9 +65,30 @@ type TokenConfig = {
   unauthMessage: string
 }
 
+/** 延迟函数 */
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+/** 带超时的 fetch */
+async function fetchWithTimeout(url: string, options: RequestInit, timeout: number): Promise<Response> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeout)
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    })
+    return response
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
 /** 内部通用请求逻辑，减少 api 与 apiWorker 的重复代码 */
 async function requestWithToken<T>(path: string, options: ApiOptions, config: TokenConfig): Promise<T> {
-  const { body, query, ...rest } = options
+  const { body, query, timeout = DEFAULT_TIMEOUT, retries = MAX_RETRIES, ...rest } = options
   let url = path.startsWith('http') ? path : `${API_BASE}${path.startsWith('/') ? '' : '/'}${path}`
   if (query && Object.keys(query).length > 0) {
     const qs = new URLSearchParams()
@@ -69,24 +100,55 @@ async function requestWithToken<T>(path: string, options: ApiOptions, config: To
   const token = USE_COOKIE_AUTH ? null : config.getToken()
   if (token) (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`
 
-  const res = await fetch(url, {
+  const fetchOptions: RequestInit = {
     ...rest,
     headers,
     credentials: USE_COOKIE_AUTH ? 'include' : 'same-origin',
     body: body != null ? (body instanceof FormData ? body : JSON.stringify(body)) : undefined,
-  })
-
-  const newToken = res.headers.get('X-Token-Refresh')
-  if (newToken) config.setToken(newToken)
-
-  const data = await res.json().catch(() => ({}))
-  if (res.status === 401) {
-    config.setToken(null)
-    if (typeof window !== 'undefined') window.location.href = config.loginRedirect
-    throw new Error((data as { message?: string }).message ?? config.unauthMessage)
   }
-  if (!res.ok) throw new Error((data as { message?: string }).message ?? res.statusText)
-  return data as T
+
+  let lastError: Error | null = null
+  let attempt = 0
+
+  while (attempt <= retries) {
+    try {
+      const res = await fetchWithTimeout(url, fetchOptions, timeout)
+
+      const newToken = res.headers.get('X-Token-Refresh')
+      if (newToken) config.setToken(newToken)
+
+      const data = await res.json().catch(() => ({}))
+      if (res.status === 401) {
+        config.setToken(null)
+        if (typeof window !== 'undefined') window.location.href = config.loginRedirect
+        throw new Error((data as { message?: string }).message ?? config.unauthMessage)
+      }
+      if (!res.ok) throw new Error((data as { message?: string }).message ?? res.statusText)
+      return data as T
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error))
+
+      // 401 不重试
+      if (lastError.message.includes('未登录') || lastError.message.includes('请重新登录')) {
+        throw lastError
+      }
+
+      // 网络错误或超时，尝试重试
+      const isNetworkError = lastError.name === 'AbortError' ||
+        lastError.message.includes('network') ||
+        lastError.message.includes('fetch')
+
+      if (isNetworkError && attempt < retries) {
+        attempt++
+        await delay(RETRY_DELAY * attempt) // 递增延迟
+        continue
+      }
+
+      throw lastError
+    }
+  }
+
+  throw lastError ?? new Error('请求失败')
 }
 
 export async function api<T = unknown>(path: string, options: ApiOptions = {}): Promise<T> {
@@ -96,6 +158,96 @@ export async function api<T = unknown>(path: string, options: ApiOptions = {}): 
     loginRedirect: '/login',
     unauthMessage: '未登录',
   })
+}
+
+// ==================== 缓存机制 ====================
+
+interface CacheItem<T> {
+  data: T
+  timestamp: number
+  ttl: number
+}
+
+const cache = new Map<string, CacheItem<unknown>>()
+
+/** 清理过期缓存 */
+function cleanupCache(): void {
+  const now = Date.now()
+  for (const [key, item] of cache.entries()) {
+    if (now - item.timestamp > item.ttl) {
+      cache.delete(key)
+    }
+  }
+}
+
+/** 生成缓存键 */
+function getCacheKey(path: string, query?: Record<string, string | number>): string {
+  const queryStr = query ? JSON.stringify(query) : ''
+  return `${path}:${queryStr}`
+}
+
+/**
+ * 带缓存的 GET 请求
+ * @param path API 路径
+ * @param query 查询参数
+ * @param ttl 缓存时间（毫秒），默认 60 秒
+ */
+export async function apiWithCache<T = unknown>(
+  path: string,
+  query?: Record<string, string | number>,
+  ttl: number = 60000
+): Promise<T> {
+  // 只在浏览器端使用缓存
+  if (typeof window === 'undefined') {
+    return api<T>(path, { query })
+  }
+
+  const cacheKey = getCacheKey(path, query)
+
+  // 清理过期缓存
+  cleanupCache()
+
+  // 检查缓存
+  const cached = cache.get(cacheKey) as CacheItem<T> | undefined
+  if (cached && Date.now() - cached.timestamp < cached.ttl) {
+    return cached.data
+  }
+
+  // 发起请求
+  const data = await api<T>(path, { query })
+
+  // 存入缓存
+  cache.set(cacheKey, {
+    data,
+    timestamp: Date.now(),
+    ttl,
+  })
+
+  return data
+}
+
+/** 清除指定路径的缓存 */
+export function clearApiCache(path?: string): void {
+  if (path) {
+    // 清除匹配路径的所有缓存
+    for (const key of cache.keys()) {
+      if (key.startsWith(path)) {
+        cache.delete(key)
+      }
+    }
+  } else {
+    cache.clear()
+  }
+}
+
+/** 工人端带缓存的 GET 请求 */
+export async function apiWorkerWithCache<T = unknown>(
+  path: string,
+  query?: Record<string, string | number>,
+  ttl: number = 60000
+): Promise<T> {
+  // 工人端请求不使用缓存，因为数据可能更频繁变化
+  return apiWorker<T>(path, { query })
 }
 
 /** 构造后端静态文件访问 URL（如签名图片），优先使用 NEXT_PUBLIC_API_BASE */
