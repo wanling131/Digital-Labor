@@ -7,8 +7,8 @@
     "build": "next build --webpack",
     "start": "next start -p 3001",
     "lint": "eslint .",
-    "e2e": "playwright test --config e2e/playwright.config.ts",
-    "e2e:headed": "playwright test --config e2e/playwright.config.ts --headed"
+    "e2e": "playwright test --config ../tests/frontend/e2e/playwright.config.cjs",
+    "e2e:headed": "playwright test --config ../tests/frontend/e2e/playwright.config.cjs --headed"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

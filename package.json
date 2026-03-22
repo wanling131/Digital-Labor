@@ -18,7 +18,7 @@
     "test:web": "cd web && npm run build",
     "test:connectivity": "node scripts/connectivity-test.mjs",
     "test:all": "npm run test:server && npm run test:web",
-    "test:e2e": "playwright test tests/frontend/e2e.test.js",
+    "test:e2e": "playwright test --config tests/frontend/e2e/playwright.config.cjs",
     "seed": "python database/init_and_import.py --with-seed"
   },
   "devDependencies": {

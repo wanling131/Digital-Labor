@@ -1,11 +1,11 @@
 # 浏览器自动化测试（E2E）
 
-本目录包含 Playwright 端到端测试的配置与用例。
+本目录包含 Playwright 配置（`playwright.config.cjs`）；用例分布在 `tests/frontend/e2e/*.spec.ts` 与 `tests/frontend/e2e.test.js`。
 
-## 目录说明
+## 端口说明
 
-- `playwright.config.ts` — Playwright 配置（Edge、前端地址、自动启动 Next）
-- `*.spec.ts` — 测试用例（首页、PC 登录、H5 工人端）
+- **开发**：`web` 下 `npm run dev` 使用 **http://localhost:3002**（与 `next start -p 3001` 区分）。
+- 本配置中 `baseURL` / `webServer.url` 已与 **3002** 对齐。
 
 ## 运行方式
 
@@ -14,10 +14,17 @@
    cd server && python -m digital_labor.run
    ```
 
-2. **在 web 目录执行**：
+2. **任选一种**：
+
+   **在仓库根目录**（推荐）：
+   ```bash
+   npm run test:e2e
+   ```
+
+   **在 `web` 目录**：
    ```bash
    npm run e2e          # 无头模式
    npm run e2e:headed   # 有界面模式
    ```
 
-前端会在运行测试时由 Playwright 自动启动，无需手动 `npm run dev`。
+前端会在运行测试时由 Playwright 在 `web` 目录下执行 `npm run dev` 自动启动（若 3002 已有服务则复用，见 `reuseExistingServer`）。
