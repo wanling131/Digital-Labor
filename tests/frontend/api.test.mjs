@@ -1,6 +1,6 @@
 /**
  * 后端 API 自动化测试（黑盒）：直接请求运行中的 Python dtcloud 后端
- * 执行：在仓库根目录 node --test test/api.test.mjs
+ * 执行：在仓库根目录 node --test tests/frontend/api.test.mjs
  */
 process.env.NODE_ENV = 'test'
 import test from 'node:test'

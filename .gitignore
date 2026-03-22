@@ -33,6 +33,7 @@ database/*.sqlite
 # 前端构建产物
 web/dist/
 web/.next/
+*.tsbuildinfo
 
 # 系统与编辑器
 .DS_Store
