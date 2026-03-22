@@ -48,9 +48,6 @@ class WorkerLoginBody(BaseModel):
     password: Optional[str] = None
 
 
-WORKER_DEMO_PASSWORD = "123456"
-
-
 @router.post("/worker-login")
 def worker_login_endpoint(body: WorkerLoginBody):
     try:
