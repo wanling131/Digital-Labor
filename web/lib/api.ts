@@ -166,9 +166,13 @@ interface CacheItem<T> {
   data: T
   timestamp: number
   ttl: number
+  lastAccess: number // LRU 最后访问时间
 }
 
 const cache = new Map<string, CacheItem<unknown>>()
+
+// LRU 配置
+const MAX_CACHE_SIZE = 100 // 最大缓存条目数
 
 /** 清理过期缓存 */
 function cleanupCache(): void {
@@ -177,6 +181,26 @@ function cleanupCache(): void {
     if (now - item.timestamp > item.ttl) {
       cache.delete(key)
     }
+  }
+}
+
+/** LRU 淘汰：当缓存超过最大条目数时，删除最久未访问的条目 */
+function evictLRU(): void {
+  if (cache.size <= MAX_CACHE_SIZE) return
+
+  // 找出最久未访问的条目
+  let oldestKey: string | null = null
+  let oldestAccess = Infinity
+
+  for (const [key, item] of cache.entries()) {
+    if (item.lastAccess < oldestAccess) {
+      oldestAccess = item.lastAccess
+      oldestKey = key
+    }
+  }
+
+  if (oldestKey) {
+    cache.delete(oldestKey)
   }
 }
 
@@ -210,17 +234,24 @@ export async function apiWithCache<T = unknown>(
   // 检查缓存
   const cached = cache.get(cacheKey) as CacheItem<T> | undefined
   if (cached && Date.now() - cached.timestamp < cached.ttl) {
+    // 更新最后访问时间（LRU）
+    cached.lastAccess = Date.now()
     return cached.data
   }
 
   // 发起请求
   const data = await api<T>(path, { query })
 
+  // 存入缓存前检查 LRU 限制
+  evictLRU()
+
   // 存入缓存
+  const now = Date.now()
   cache.set(cacheKey, {
     data,
-    timestamp: Date.now(),
+    timestamp: now,
     ttl,
+    lastAccess: now,
   })
 
   return data

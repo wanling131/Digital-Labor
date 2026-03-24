@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
+from typing import Optional, Tuple
 
 from sqlalchemy import text
 
@@ -10,14 +10,17 @@ from digital_labor.auth.jwt import sign_token
 from digital_labor.auth.passwords import verify_password, is_bcrypt_hash, validate_password_strength
 from digital_labor.db import get_engine
 from digital_labor.settings import settings
+from digital_labor.utils.cache import cache_manager
 
 
 # 登录失败次数限制配置
 MAX_LOGIN_ATTEMPTS = 5  # 最大失败次数
 LOCKOUT_DURATION_SECONDS = 300  # 锁定时长（5分钟）
 
-# 内存存储登录失败记录: {username: (fail_count, last_fail_time, lockout_until)}
-_login_attempts: Dict[str, Tuple[int, float, float]] = {}
+
+def _get_login_attempt_key(username: str) -> str:
+    """获取登录尝试的缓存键"""
+    return f"login_attempts:{username.lower()}"
 
 
 def _check_login_attempts(username: str) -> Tuple[bool, Optional[str]]:
@@ -28,19 +31,21 @@ def _check_login_attempts(username: str) -> Tuple[bool, Optional[str]]:
         Tuple[bool, Optional[str]]: (是否允许登录, 错误消息)
     """
     now = time.time()
-    username_lower = username.lower()
+    key = _get_login_attempt_key(username)
 
-    if username_lower in _login_attempts:
-        fail_count, last_fail, lockout_until = _login_attempts[username_lower]
+    attempt_data = cache_manager.get(key)
+    if attempt_data:
+        fail_count = attempt_data.get("fail_count", 0)
+        lockout_until = attempt_data.get("lockout_until", 0)
 
         # 检查是否在锁定期内
         if lockout_until > now:
             remaining = int(lockout_until - now)
             return False, f"账户已锁定，请{remaining}秒后重试"
 
-        # 如果锁定已过期，重置计数
+        # 如果锁定已过期，清除记录
         if lockout_until > 0 and lockout_until <= now:
-            del _login_attempts[username_lower]
+            cache_manager.invalidate(key)
 
     return True, None
 
@@ -53,30 +58,37 @@ def _record_login_failure(username: str) -> Optional[str]:
         Optional[str]: 错误消息（如果账户被锁定）
     """
     now = time.time()
-    username_lower = username.lower()
+    key = _get_login_attempt_key(username)
 
-    if username_lower in _login_attempts:
-        fail_count, last_fail, lockout_until = _login_attempts[username_lower]
-        fail_count += 1
+    attempt_data = cache_manager.get(key)
+    if attempt_data:
+        fail_count = attempt_data.get("fail_count", 0) + 1
     else:
         fail_count = 1
 
     # 达到最大失败次数，锁定账户
     if fail_count >= MAX_LOGIN_ATTEMPTS:
         lockout_until = now + LOCKOUT_DURATION_SECONDS
-        _login_attempts[username_lower] = (fail_count, now, lockout_until)
+        cache_manager.set(key, {
+            "fail_count": fail_count,
+            "last_fail": now,
+            "lockout_until": lockout_until
+        }, ttl=LOCKOUT_DURATION_SECONDS + 60)
         return f"登录失败次数过多，账户已锁定{LOCKOUT_DURATION_SECONDS // 60}分钟"
 
-    _login_attempts[username_lower] = (fail_count, now, 0)
+    cache_manager.set(key, {
+        "fail_count": fail_count,
+        "last_fail": now,
+        "lockout_until": 0
+    }, ttl=LOCKOUT_DURATION_SECONDS + 60)
     remaining = MAX_LOGIN_ATTEMPTS - fail_count
     return f"用户名或密码错误，剩余{remaining}次尝试机会"
 
 
 def _clear_login_failure(username: str) -> None:
     """清除登录失败记录。"""
-    username_lower = username.lower()
-    if username_lower in _login_attempts:
-        del _login_attempts[username_lower]
+    key = _get_login_attempt_key(username)
+    cache_manager.invalidate(key)
 
 
 @dataclass(frozen=True)

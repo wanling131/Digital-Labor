@@ -135,9 +135,19 @@ def create_app() -> FastAPI:
             except Exception as e:  # noqa: BLE001
                 logging.warning("Seed op_log failed: %s", e)
 
+    # CORS 配置：从环境变量读取，支持逗号分隔的多域名
+    # 开发环境默认允许所有来源，生产环境必须配置具体域名
+    cors_origins = settings.cors_allow_origins
+    if cors_origins == "*":
+        allow_origins = ["*"]
+        logging.warning("CORS 允许所有来源 (*)，生产环境请配置 CORS_ALLOW_ORIGINS 环境变量")
+    else:
+        allow_origins = [origin.strip() for origin in cors_origins.split(",") if origin.strip()]
+        logging.info("CORS 允许来源: %s", allow_origins)
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=allow_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
