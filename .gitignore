@@ -40,10 +40,11 @@ web/.next/
 Thumbs.db
 *.swp
 .idea/
-.vscode/
 
-# 本地 AI/IDE 配置（勿提交密钥）
-.claude/
+# Claude AI 配置
+# 提交：CLAUDE.md（项目规范）、commands/（技能命令）
+# 忽略：settings.local.json（个人权限）
+.claude/settings.local.json
 
 # 第三方/示例（不推送）
 awesome-claude-skills/
