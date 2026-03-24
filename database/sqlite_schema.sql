@@ -163,6 +163,8 @@ CREATE TABLE IF NOT EXISTS op_log (
   action TEXT,
   detail TEXT,
   result TEXT,
+  data_before TEXT,
+  data_after TEXT,
   created_at TEXT DEFAULT (CURRENT_TIMESTAMP)
 );
 
@@ -200,18 +202,23 @@ CREATE INDEX IF NOT EXISTS idx_person_status ON person(status);
 CREATE INDEX IF NOT EXISTS idx_person_on_site ON person(on_site);
 CREATE INDEX IF NOT EXISTS idx_person_updated_at ON person(updated_at);
 CREATE INDEX IF NOT EXISTS idx_person_job_title ON person(job_title);
+CREATE INDEX IF NOT EXISTS idx_person_work_no ON person(work_no);
+CREATE INDEX IF NOT EXISTS idx_person_face_verified ON person(face_verified);
+CREATE INDEX IF NOT EXISTS idx_person_contract_signed ON person(contract_signed);
 CREATE INDEX IF NOT EXISTS idx_attendance_work_date ON attendance(work_date);
 CREATE INDEX IF NOT EXISTS idx_attendance_person_id ON attendance(person_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_person_work_date ON attendance(person_id, work_date);
+CREATE INDEX IF NOT EXISTS idx_attendance_org_id ON attendance(org_id);
 CREATE INDEX IF NOT EXISTS idx_contract_instance_status ON contract_instance(status);
 CREATE INDEX IF NOT EXISTS idx_contract_instance_person ON contract_instance(person_id);
 CREATE INDEX IF NOT EXISTS idx_contract_instance_flow_id ON contract_instance(flow_id);
+CREATE INDEX IF NOT EXISTS idx_contract_instance_signed_at ON contract_instance(signed_at);
+CREATE INDEX IF NOT EXISTS idx_contract_instance_status_person ON contract_instance(status, person_id);
 CREATE INDEX IF NOT EXISTS idx_settlement_person_status ON settlement(person_id, status);
 CREATE INDEX IF NOT EXISTS idx_settlement_period ON settlement(period_start, period_end);
+CREATE INDEX IF NOT EXISTS idx_settlement_status ON settlement(status);
 CREATE INDEX IF NOT EXISTS idx_notification_person_id ON notification(person_id);
 CREATE INDEX IF NOT EXISTS idx_notification_created_at ON notification(created_at);
-CREATE INDEX IF NOT EXISTS idx_person_work_no ON person(work_no);
-CREATE INDEX IF NOT EXISTS idx_person_face_verified ON person(face_verified);
 CREATE INDEX IF NOT EXISTS idx_person_certificate_person_id ON person_certificate(person_id);
 CREATE INDEX IF NOT EXISTS idx_equipment_org_id ON equipment(org_id);
 CREATE INDEX IF NOT EXISTS idx_equipment_status ON equipment(status);
@@ -219,6 +226,12 @@ CREATE INDEX IF NOT EXISTS idx_site_log_org_id ON site_log(org_id);
 CREATE INDEX IF NOT EXISTS idx_site_log_created_at ON site_log(created_at);
 CREATE INDEX IF NOT EXISTS idx_clock_log_person_id ON clock_log(person_id);
 CREATE INDEX IF NOT EXISTS idx_clock_log_punch_at ON clock_log(punch_at);
+CREATE INDEX IF NOT EXISTS idx_op_log_user_id ON op_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_op_log_created_at ON op_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_op_log_module ON op_log(module);
+CREATE INDEX IF NOT EXISTS idx_user_username ON "user"(username);
+CREATE INDEX IF NOT EXISTS idx_user_org_id ON "user"(org_id);
+CREATE INDEX IF NOT EXISTS idx_user_enabled ON "user"(enabled);
 
 COMMIT;
 

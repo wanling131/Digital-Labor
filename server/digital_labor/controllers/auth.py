@@ -28,16 +28,16 @@ def login(body: LoginBody, request: Request):
     if not u or not p:
         return err(400, "用户名和密码必填")
     try:
-        r = admin_login(u, p)
+        result, err_msg = admin_login(u, p)
     except Exception:  # 数据库不可达/超时等，统一返回 503
         op_log_add(0, u, "认证", "登录", f"用户名: {u}", "失败")
         return err(503, "服务暂时不可用，请检查数据库连接")
-    if not r:
+    if not result:
         op_log_add(0, u, "认证", "登录", f"用户名: {u}", "失败")
-        return err(401, "用户名或密码错误")
+        return err(401, err_msg or "用户名或密码错误")
     # 登录成功，记录日志
-    op_log_add(r.user["id"], r.user["username"], "认证", "登录", f"用户名: {r.user['username']}, 角色: {r.user['role']}", "成功")
-    return ok({"token": r.token, "user": r.user})
+    op_log_add(result.user["id"], result.user["username"], "认证", "登录", f"用户名: {result.user['username']}, 角色: {result.user['role']}", "成功")
+    return ok({"token": result.token, "user": result.user})
 
 
 class WorkerLoginBody(BaseModel):

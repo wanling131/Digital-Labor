@@ -120,7 +120,31 @@ npm run dev
 
 ## 技术栈
 
-- 前端：Next.js 16、React 19、TypeScript、Tailwind CSS（PC 管理端 + H5 工人端共用一套工程）  
-- 后端（主线）：Python 3.8、FastAPI（兼容层）、dtcloud（路由层）、PostgreSQL、JWT  
-- 后端（历史）：曾用 Node.js + Express + SQLite；**当前仓库主线为 Python 后端**，旧 Node 实现已不在本仓库维护。  
+- 前端：Next.js 16、React 19、TypeScript、Tailwind CSS（PC 管理端 + H5 工人端共用一套工程）
+- 后端（主线）：Python 3.8、FastAPI、SQLAlchemy、PostgreSQL/SQLite、JWT、bcrypt
 - 功能范围与实现进度见 **功能点/需求与实现对比.md**。
+
+---
+
+## 最近更新 (2024-03)
+
+### 安全加固
+- ✅ 密码 bcrypt 哈希存储
+- ✅ 密码强度验证（8字符+大小写+数字）
+- ✅ 登录失败锁定机制（5次失败锁定5分钟）
+- ✅ 敏感字段加密存储（身份证、手机号、银行卡）
+
+### 性能优化
+- ✅ 数据库索引优化（35+ SQLite, 39+ PostgreSQL）
+- ✅ SQL IN 子句使用 `bindparam(expanding=True)` 防止注入
+
+### 功能完善
+- ✅ 权限数据范围过滤（基于组织树）
+- ✅ 操作审计增强（数据变更前后快照）
+- ✅ 电子签接口预留（e签宝对接预留）
+- ✅ 批量导入错误详情导出
+
+### 代码质量
+- ✅ 前端 TypeScript 类型定义（28 interfaces）
+- ✅ 输入验证工具（手机号、身份证、银行卡）
+- ✅ 四阶段开发工作流规范（CLAUDE.md）

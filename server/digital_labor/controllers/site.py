@@ -13,7 +13,7 @@ from digital_labor.services.site_service import equipment_update as svc_equipmen
 from digital_labor.services.site_service import leave as svc_leave
 from digital_labor.services.site_service import site_log_create as svc_site_log_create
 from digital_labor.services.site_service import site_log_list as svc_site_log_list
-from digital_labor.web.middleware import require_permission
+from digital_labor.web.middleware import get_user, require_permission
 from digital_labor.web.response import err, ok
 
 
@@ -46,7 +46,11 @@ def board():
 def equipment_list(request: Request):
     q = dict(request.query_params)
     pg = parse_pagination(q, default_page_size=50, max_page_size=100)
-    return ok(svc_equipment_list(filters=q, limit=pg.limit, offset=pg.offset))
+    u = get_user(request) or {}
+    actor_org_id = None
+    if u.get("role") != "admin" and u.get("orgId") is not None:
+        actor_org_id = int(u["orgId"])
+    return ok(svc_equipment_list(filters=q, limit=pg.limit, offset=pg.offset, actor_org_id=actor_org_id))
 
 
 class EquipmentBody(BaseModel):
@@ -94,7 +98,11 @@ def equipment_delete(equipment_id: int):
 def site_log_list(request: Request):
     q = dict(request.query_params)
     pg = parse_pagination(q, default_page_size=50, max_page_size=100)
-    return ok(svc_site_log_list(filters=q, limit=pg.limit, offset=pg.offset))
+    u = get_user(request) or {}
+    actor_org_id = None
+    if u.get("role") != "admin" and u.get("orgId") is not None:
+        actor_org_id = int(u["orgId"])
+    return ok(svc_site_log_list(filters=q, limit=pg.limit, offset=pg.offset, actor_org_id=actor_org_id))
 
 
 class SiteLogBody(BaseModel):

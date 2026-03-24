@@ -4,9 +4,10 @@ import datetime as dt
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from digital_labor.db import get_engine
+from digital_labor.utils.permission import get_org_tree_ids
 
 
 def _as_date_str(v: Any) -> str:
@@ -134,33 +135,27 @@ def import_from_excel_rows(rows: List[Tuple[Any, ...]]) -> dict:
     return {"ok": True, "count": count}
 
 
-def report(*, filters: Dict[str, Any], limit: int, offset: int) -> dict:
+def report(*, filters: Dict[str, Any], limit: int, offset: int, actor_org_id: Optional[int] = None) -> dict:
     person_id = filters.get("person_id")
     org_id = filters.get("org_id")
+    # 如果传入了actor_org_id，覆盖用户选择的org_id
+    if actor_org_id is not None:
+        org_id = actor_org_id
     start = filters.get("start")
     end = filters.get("end")
     where = []
     params: Dict[str, Any] = {"limit": limit, "offset": offset}
+    bindparams_list: List[bindparam] = []
     if person_id:
         where.append("a.person_id = :pid")
         params["pid"] = int(person_id)
     if org_id:
         # 实现基于组织树的数据范围控制
-        engine = get_engine()
-        with engine.connect() as conn:
-            # 获取组织及其所有子组织的ID
-            rows = conn.execute(
-                text('''WITH RECURSIVE org_hierarchy(id) AS (
-                    SELECT id FROM org WHERE id = :org_id
-                    UNION ALL
-                    SELECT o.id FROM org o JOIN org_hierarchy oh ON o.parent_id = oh.id
-                ) SELECT id FROM org_hierarchy'''),
-                {"org_id": int(org_id)}
-            ).scalars().all()
-            org_ids = [int(row) for row in rows]
-            if org_ids:
-                where.append("(a.org_id IN :oid OR p.org_id IN :oid)")
-                params["oid"] = org_ids
+        org_ids = get_org_tree_ids(int(org_id))
+        if org_ids:
+            where.append("(a.org_id IN :_org_ids OR p.org_id IN :_org_ids)")
+            params["_org_ids"] = org_ids
+            bindparams_list.append(bindparam("_org_ids", expanding=True))
     if start:
         where.append("DATE(a.work_date) >= DATE(:start)")
         params["start"] = start
@@ -171,6 +166,8 @@ def report(*, filters: Dict[str, Any], limit: int, offset: int) -> dict:
     engine = get_engine()
     with engine.connect() as conn:
         total_query = text("SELECT COUNT(*) FROM attendance a JOIN person p ON a.person_id=p.id" + where_clause)
+        if bindparams_list:
+            total_query = total_query.bindparams(*bindparams_list)
         total = conn.execute(total_query, params).scalar_one()
         rows_query = text(
             """
@@ -179,9 +176,11 @@ def report(*, filters: Dict[str, Any], limit: int, offset: int) -> dict:
             JOIN person p ON a.person_id=p.id
             LEFT JOIN org o ON a.org_id=o.id
             """
-            + where_clause + 
+            + where_clause +
             " ORDER BY a.work_date DESC, a.id DESC LIMIT :limit OFFSET :offset"
         )
+        if bindparams_list:
+            rows_query = rows_query.bindparams(*bindparams_list)
         rows = conn.execute(rows_query, params).mappings().all()
     return {"list": [dict(r) for r in rows], "total": int(total)}
 
@@ -247,33 +246,27 @@ def clock(*, person_id: int, typ: str) -> dict:
     return {"ok": True, "work_date": work_date, ("clock_in" if typ == "in" else "clock_out"): time_str}
 
 
-def clock_log(*, filters: Dict[str, Any], limit: int, offset: int) -> dict:
+def clock_log(*, filters: Dict[str, Any], limit: int, offset: int, actor_org_id: Optional[int] = None) -> dict:
     person_id = filters.get("person_id")
     org_id = filters.get("org_id")
+    # 如果传入了actor_org_id，覆盖用户选择的org_id
+    if actor_org_id is not None:
+        org_id = actor_org_id
     start = filters.get("start")
     end = filters.get("end")
     where = []
     params: Dict[str, Any] = {"limit": limit, "offset": offset}
+    bindparams_list: List[bindparam] = []
     if person_id:
         where.append("c.person_id = :pid")
         params["pid"] = int(person_id)
     if org_id:
         # 实现基于组织树的数据范围控制
-        engine = get_engine()
-        with engine.connect() as conn:
-            # 获取组织及其所有子组织的ID
-            rows = conn.execute(
-                text('''WITH RECURSIVE org_hierarchy(id) AS (
-                    SELECT id FROM org WHERE id = :org_id
-                    UNION ALL
-                    SELECT o.id FROM org o JOIN org_hierarchy oh ON o.parent_id = oh.id
-                ) SELECT id FROM org_hierarchy'''),
-                {"org_id": int(org_id)}
-            ).scalars().all()
-            org_ids = [int(row) for row in rows]
-            if org_ids:
-                where.append("p.org_id IN :oid")
-                params["oid"] = org_ids
+        org_ids = get_org_tree_ids(int(org_id))
+        if org_ids:
+            where.append("p.org_id IN :_org_ids")
+            params["_org_ids"] = org_ids
+            bindparams_list.append(bindparam("_org_ids", expanding=True))
     if start:
         where.append("c.punch_at >= :start")
         params["start"] = start
@@ -284,6 +277,8 @@ def clock_log(*, filters: Dict[str, Any], limit: int, offset: int) -> dict:
     engine = get_engine()
     with engine.connect() as conn:
         total_query = text("SELECT COUNT(*) FROM clock_log c JOIN person p ON c.person_id=p.id" + where_clause)
+        if bindparams_list:
+            total_query = total_query.bindparams(*bindparams_list)
         total = conn.execute(total_query, params).scalar_one()
         rows_query = text(
             """
@@ -293,9 +288,11 @@ def clock_log(*, filters: Dict[str, Any], limit: int, offset: int) -> dict:
             JOIN person p ON c.person_id=p.id
             LEFT JOIN org o ON p.org_id=o.id
             """
-            + where_clause + 
+            + where_clause +
             " ORDER BY c.punch_at DESC, c.id DESC LIMIT :limit OFFSET :offset"
         )
+        if bindparams_list:
+            rows_query = rows_query.bindparams(*bindparams_list)
         rows = conn.execute(rows_query, params).mappings().all()
     return {"list": [dict(r) for r in rows], "total": int(total)}
 

@@ -13,6 +13,7 @@ from sqlalchemy import bindparam, text
 from digital_labor.crypto_compat import encrypt, safe_decrypt_then_mask
 from digital_labor.db import get_engine
 from digital_labor.paths import get_paths
+from digital_labor.utils.permission import get_org_tree_ids
 
 
 from digital_labor.utils.cache import get_cache, set_cache
@@ -80,26 +81,17 @@ def archive_list(
 
     where: List[str] = []
     params: Dict[str, Any] = {"limit": page.limit, "offset": page.offset}
+    bindparams_list: List[bindparam] = []
     if status:
         where.append("p.status = :status")
         params["status"] = status
     if org_id:
         # 实现基于组织树的数据范围控制
-        engine = get_engine()
-        with engine.connect() as conn:
-            # 获取组织及其所有子组织的ID
-            rows = conn.execute(
-                text('''WITH RECURSIVE org_hierarchy(id) AS (
-                    SELECT id FROM org WHERE id = :org_id
-                    UNION ALL
-                    SELECT o.id FROM org o JOIN org_hierarchy oh ON o.parent_id = oh.id
-                ) SELECT id FROM org_hierarchy'''),
-                {"org_id": int(org_id)}
-            ).scalars().all()
-            org_ids = [int(row) for row in rows]
-            if org_ids:
-                where.append("p.org_id IN :org_ids")
-                params["org_ids"] = org_ids
+        org_ids = get_org_tree_ids(int(org_id))
+        if org_ids:
+            where.append("p.org_id IN :org_ids")
+            params["org_ids"] = org_ids
+            bindparams_list.append(bindparam("org_ids", expanding=True))
     if on_site == "1":
         where.append("p.on_site = 1")
     if on_site == "0":
@@ -123,15 +115,19 @@ def archive_list(
     engine = get_engine()
     with engine.connect() as conn:
         total_query = text("SELECT COUNT(*) FROM person p LEFT JOIN org o ON p.org_id = o.id WHERE 1=1" + where_clause)
+        if bindparams_list:
+            total_query = total_query.bindparams(*bindparams_list)
         total = conn.execute(total_query, params).scalar_one()
         rows_query = text(
             """
             SELECT p.*, o.name as org_name
             FROM person p LEFT JOIN org o ON p.org_id = o.id
             WHERE 1=1"""
-            + where_clause + 
+            + where_clause +
             " ORDER BY p.id DESC LIMIT :limit OFFSET :offset"
         )
+        if bindparams_list:
+            rows_query = rows_query.bindparams(*bindparams_list)
         rows = conn.execute(rows_query, params).mappings().all()
 
     out = []
@@ -294,8 +290,24 @@ def me_activation(worker_id: int, patch: Dict[str, Any]) -> None:
         conn.execute(query, params)
 
 
-def batch_import_from_excel(data: bytes, *, default_job_title: Optional[str] = None) -> dict:
-    """批量导入人员，Excel 格式同 Node 端。工种为空时使用 default_job_title。"""
+def batch_import_from_excel(data: bytes, *, default_job_title: Optional[str] = None, skip_errors: bool = True) -> dict:
+    """
+    批量导入人员，Excel 格式同 Node 端。工种为空时使用 default_job_title。
+
+    Args:
+        data: Excel 文件字节数据
+        default_job_title: 默认工种
+        skip_errors: 是否跳过错误行继续导入（默认 True）
+
+    Returns:
+        dict: {
+            "imported": 导入成功数量,
+            "total": 总行数,
+            "errors": 错误列表,
+            "error_rows": 错误行号列表（用于导出）,
+            "progress": {"current": 当前行, "total": 总行数}
+        }
+    """
     try:
         import openpyxl  # type: ignore
     except Exception:  # noqa: BLE001
@@ -305,7 +317,7 @@ def batch_import_from_excel(data: bytes, *, default_job_title: Optional[str] = N
     ws = wb.worksheets[0]
     rows = list(ws.iter_rows(values_only=True))
     if not rows:
-        return {"imported": 0, "total": 0, "errors": []}
+        return {"imported": 0, "total": 0, "errors": [], "error_rows": []}
 
     header = [str(h or "").strip() for h in rows[0]]
 
@@ -331,7 +343,9 @@ def batch_import_from_excel(data: bytes, *, default_job_title: Optional[str] = N
     id_card_re = re.compile(r"^[1-9]\d{5}(18|19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{3}[0-9Xx]$")
 
     errors: List[dict] = []
+    error_rows: List[int] = []
     valid: List[Dict[str, Any]] = []
+    total_rows = len(rows) - 1
 
     for i in range(1, len(rows)):
         r = rows[i]
@@ -353,7 +367,12 @@ def batch_import_from_excel(data: bytes, *, default_job_title: Optional[str] = N
             row_errors.append("身份证号格式不正确")
 
         if row_errors:
-            errors.append({"row": i + 2, "errors": row_errors})
+            errors.append({"row": i + 2, "errors": row_errors, "data": {
+                "name": name,
+                "mobile": mobile,
+                "id_card": id_card,
+            }})
+            error_rows.append(i + 2)
             continue
 
         work_no = str(r[work_no_idx]).strip() if work_no_idx >= 0 and r[work_no_idx] is not None else None
@@ -380,13 +399,20 @@ def batch_import_from_excel(data: bytes, *, default_job_title: Optional[str] = N
             "job_title": job_title,
         })
 
-    if errors:
-        return {"imported": 0, "total": len(rows) - 1, "errors": errors}
+    # 如果不跳过错误且有错误，则不导入
+    if not skip_errors and errors:
+        return {
+            "imported": 0,
+            "total": total_rows,
+            "errors": errors,
+            "error_rows": error_rows,
+            "progress": {"current": total_rows, "total": total_rows}
+        }
 
     engine = get_engine()
     count = 0
     with engine.begin() as conn:
-        for item in valid:
+        for idx, item in enumerate(valid):
             params = {
                 "org_id": item["org_id"],
                 "work_no": item["work_no"],
@@ -419,7 +445,59 @@ def batch_import_from_excel(data: bytes, *, default_job_title: Optional[str] = N
                 )
             count += 1
 
-    return {"imported": count, "total": len(rows) - 1, "errors": errors}
+    return {
+        "imported": count,
+        "total": total_rows,
+        "errors": errors,
+        "error_rows": error_rows,
+        "progress": {"current": total_rows, "total": total_rows}
+    }
+
+
+def generate_error_excel(original_data: bytes, error_rows: List[int]) -> bytes:
+    """
+    生成错误行 Excel 文件。
+
+    Args:
+        original_data: 原始 Excel 文件字节数据
+        error_rows: 错误行号列表（Excel 行号，从 1 开始）
+
+    Returns:
+        bytes: 错误行 Excel 文件字节数据
+    """
+    try:
+        import openpyxl  # type: ignore
+    except Exception:  # noqa: BLE001
+        raise RuntimeError("缺少依赖 openpyxl，无法解析 Excel")
+
+    wb = openpyxl.load_workbook(io.BytesIO(original_data), data_only=True)
+    ws = wb.worksheets[0]
+
+    # 创建新工作簿
+    new_wb = openpyxl.Workbook()
+    new_ws = new_wb.active
+
+    # 复制标题行
+    for col_idx, cell in enumerate(ws[1], 1):
+        new_ws.cell(row=1, column=col_idx, value=cell.value)
+
+    # 添加错误原因列
+    error_col = ws.max_column + 1
+    new_ws.cell(row=1, column=error_col, value="错误原因")
+
+    # 复制错误行
+    new_row_idx = 2
+    for row_idx in error_rows:
+        if row_idx <= ws.max_row:
+            for col_idx, cell in enumerate(ws[row_idx], 1):
+                new_ws.cell(row=new_row_idx, column=col_idx, value=cell.value)
+            new_row_idx += 1
+
+    # 保存到字节流
+    output = io.BytesIO()
+    new_wb.save(output)
+    output.seek(0)
+    return output.getvalue()
 
 
 def archive_delete(person_id: int) -> bool:

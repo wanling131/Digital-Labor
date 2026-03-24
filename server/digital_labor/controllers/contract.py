@@ -142,7 +142,11 @@ def template_file(template_id: int):
 def status_list(request: Request):
     q = dict(request.query_params)
     pg = parse_pagination(q)
-    return ok(svc_status_list(status=q.get("status"), limit=pg.limit, offset=pg.offset))
+    u = get_user(request) or {}
+    actor_org_id = None
+    if u.get("role") != "admin" and u.get("orgId") is not None:
+        actor_org_id = int(u["orgId"])
+    return ok(svc_status_list(status=q.get("status"), limit=pg.limit, offset=pg.offset, actor_org_id=actor_org_id))
 
 
 class LaunchBody(BaseModel):
@@ -164,7 +168,11 @@ def launch(body: LaunchBody):
 def archive(request: Request):
     q = dict(request.query_params)
     pg = parse_pagination(q)
-    return ok(svc_archive_list(filters=q, limit=pg.limit, offset=pg.offset))
+    u = get_user(request) or {}
+    actor_org_id = None
+    if u.get("role") != "admin" and u.get("orgId") is not None:
+        actor_org_id = int(u["orgId"])
+    return ok(svc_archive_list(filters=q, limit=pg.limit, offset=pg.offset, actor_org_id=actor_org_id))
 
 
 @router.get("/my-pending")

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from digital_labor.db import get_engine
+from digital_labor.utils.permission import get_org_tree_ids
 
 
 def leave(person_id: int) -> dict:
@@ -39,14 +40,22 @@ def board() -> dict:
     }
 
 
-def equipment_list(*, filters: Dict[str, Any], limit: int, offset: int) -> dict:
+def equipment_list(*, filters: Dict[str, Any], limit: int, offset: int, actor_org_id: Optional[int] = None) -> dict:
     org_id = filters.get("org_id")
     status = filters.get("status")
+    # 如果传入了actor_org_id，覆盖用户选择的org_id
+    if actor_org_id is not None:
+        org_id = actor_org_id
     where = []
     params: Dict[str, Any] = {"limit": limit, "offset": offset}
+    bindparams_list: List[bindparam] = []
     if org_id:
-        where.append("e.org_id = :oid")
-        params["oid"] = int(org_id)
+        # 实现基于组织树的数据范围控制
+        org_ids = get_org_tree_ids(int(org_id))
+        if org_ids:
+            where.append("e.org_id IN :_org_ids")
+            params["_org_ids"] = org_ids
+            bindparams_list.append(bindparam("_org_ids", expanding=True))
     if status:
         where.append("e.status = :status")
         params["status"] = status
@@ -54,15 +63,19 @@ def equipment_list(*, filters: Dict[str, Any], limit: int, offset: int) -> dict:
     engine = get_engine()
     with engine.connect() as conn:
         total_query = text("SELECT COUNT(*) FROM equipment e" + where_clause)
+        if bindparams_list:
+            total_query = total_query.bindparams(*bindparams_list)
         total = conn.execute(total_query, params).scalar_one()
         rows_query = text(
             """
             SELECT e.*, o.name as org_name
             FROM equipment e LEFT JOIN org o ON e.org_id=o.id
             """
-            + where_clause + 
+            + where_clause +
             " ORDER BY e.updated_at DESC, e.id DESC LIMIT :limit OFFSET :offset"
         )
+        if bindparams_list:
+            rows_query = rows_query.bindparams(*bindparams_list)
         rows = conn.execute(rows_query, params).mappings().all()
     return {"list": [dict(r) for r in rows], "total": int(total)}
 
@@ -121,14 +134,22 @@ def equipment_delete(equipment_id: int) -> bool:
     return True
 
 
-def site_log_list(*, filters: Dict[str, Any], limit: int, offset: int) -> dict:
+def site_log_list(*, filters: Dict[str, Any], limit: int, offset: int, actor_org_id: Optional[int] = None) -> dict:
     org_id = filters.get("org_id")
     log_type = filters.get("log_type")
+    # 如果传入了actor_org_id，覆盖用户选择的org_id
+    if actor_org_id is not None:
+        org_id = actor_org_id
     where = []
     params: Dict[str, Any] = {"limit": limit, "offset": offset}
+    bindparams_list: List[bindparam] = []
     if org_id:
-        where.append("s.org_id = :oid")
-        params["oid"] = int(org_id)
+        # 实现基于组织树的数据范围控制
+        org_ids = get_org_tree_ids(int(org_id))
+        if org_ids:
+            where.append("s.org_id IN :_org_ids")
+            params["_org_ids"] = org_ids
+            bindparams_list.append(bindparam("_org_ids", expanding=True))
     if log_type:
         where.append("s.log_type = :lt")
         params["lt"] = log_type
@@ -136,6 +157,8 @@ def site_log_list(*, filters: Dict[str, Any], limit: int, offset: int) -> dict:
     engine = get_engine()
     with engine.connect() as conn:
         total_query = text("SELECT COUNT(*) FROM site_log s" + where_clause)
+        if bindparams_list:
+            total_query = total_query.bindparams(*bindparams_list)
         total = conn.execute(total_query, params).scalar_one()
         rows_query = text(
             """
@@ -144,9 +167,11 @@ def site_log_list(*, filters: Dict[str, Any], limit: int, offset: int) -> dict:
             LEFT JOIN org o ON s.org_id=o.id
             LEFT JOIN "user" u ON s.user_id=u.id
             """
-            + where_clause + 
+            + where_clause +
             " ORDER BY s.created_at DESC LIMIT :limit OFFSET :offset"
         )
+        if bindparams_list:
+            rows_query = rows_query.bindparams(*bindparams_list)
         rows = conn.execute(rows_query, params).mappings().all()
     return {"list": [dict(r) for r in rows], "total": int(total)}
 

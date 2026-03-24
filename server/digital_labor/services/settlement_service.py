@@ -9,6 +9,7 @@ from sqlalchemy import bindparam, text
 
 from digital_labor.db import get_engine
 from digital_labor.paths import get_paths
+from digital_labor.utils.permission import get_org_tree_ids
 
 
 def my_pending(person_id: int) -> dict:
@@ -34,39 +35,34 @@ def my_all(person_id: int) -> dict:
 def confirm_list(*, status: Optional[str], limit: int, offset: int, actor_org_id: Optional[int] = None) -> dict:
     where = []
     params: Dict[str, Any] = {"limit": limit, "offset": offset}
+    bindparams_list: List[bindparam] = []
     if status:
         where.append("s.status = :status")
         params["status"] = status
     if actor_org_id is not None:
         # 实现基于组织树的数据范围控制
-        engine = get_engine()
-        with engine.connect() as conn:
-            # 获取组织及其所有子组织的ID
-            rows = conn.execute(
-                text('''WITH RECURSIVE org_hierarchy(id) AS (
-                    SELECT id FROM org WHERE id = :org_id
-                    UNION ALL
-                    SELECT o.id FROM org o JOIN org_hierarchy oh ON o.parent_id = oh.id
-                ) SELECT id FROM org_hierarchy'''),
-                {"org_id": int(actor_org_id)}
-            ).scalars().all()
-            org_ids = [int(row) for row in rows]
-            if org_ids:
-                where.append("p.org_id IN :oid")
-                params["oid"] = org_ids
+        org_ids = get_org_tree_ids(actor_org_id)
+        if org_ids:
+            where.append("p.org_id IN :oid")
+            params["oid"] = org_ids
+            bindparams_list.append(bindparam("oid", expanding=True))
     where_clause = " WHERE " + " AND ".join(where) if where else ""
     engine = get_engine()
     with engine.connect() as conn:
         total_query = text("SELECT COUNT(*) FROM settlement s JOIN person p ON s.person_id = p.id" + where_clause)
+        if bindparams_list:
+            total_query = total_query.bindparams(*bindparams_list)
         total = conn.execute(total_query, params).scalar_one()
         rows_query = text(
             """
             SELECT s.*, p.name as person_name, p.work_no, p.mobile
             FROM settlement s JOIN person p ON s.person_id = p.id
             """
-            + where_clause + 
+            + where_clause +
             " ORDER BY s.id DESC LIMIT :limit OFFSET :offset"
         )
+        if bindparams_list:
+            rows_query = rows_query.bindparams(*bindparams_list)
         rows = conn.execute(rows_query, params).mappings().all()
     return {"list": [dict(r) for r in rows], "total": int(total)}
 
@@ -282,26 +278,17 @@ def salary_list(*, filters: Dict[str, Any], limit: int, offset: int, actor_org_i
     month = filters.get("month")
     where = []
     params: Dict[str, Any] = {"limit": limit, "offset": offset}
+    bindparams_list: List[bindparam] = []
     if person_id:
         where.append("s.person_id = :pid")
         params["pid"] = int(person_id)
     if org_id:
         # 实现基于组织树的数据范围控制
-        engine = get_engine()
-        with engine.connect() as conn:
-            # 获取组织及其所有子组织的ID
-            rows = conn.execute(
-                text('''WITH RECURSIVE org_hierarchy(id) AS (
-                    SELECT id FROM org WHERE id = :org_id
-                    UNION ALL
-                    SELECT o.id FROM org o JOIN org_hierarchy oh ON o.parent_id = oh.id
-                ) SELECT id FROM org_hierarchy'''),
-                {"org_id": int(org_id)}
-            ).scalars().all()
-            org_ids = [int(row) for row in rows]
-            if org_ids:
-                where.append("p.org_id IN :oid")
-                params["oid"] = org_ids
+        org_ids = get_org_tree_ids(int(org_id))
+        if org_ids:
+            where.append("p.org_id IN :oid")
+            params["oid"] = org_ids
+            bindparams_list.append(bindparam("oid", expanding=True))
     if month:
         where.append("CAST(s.period_start AS TEXT) LIKE :m")
         params["m"] = f"{month}%"
@@ -309,15 +296,19 @@ def salary_list(*, filters: Dict[str, Any], limit: int, offset: int, actor_org_i
     engine = get_engine()
     with engine.connect() as conn:
         total_query = text("SELECT COUNT(*) FROM settlement s JOIN person p ON s.person_id=p.id" + where_clause)
+        if bindparams_list:
+            total_query = total_query.bindparams(*bindparams_list)
         total = conn.execute(total_query, params).scalar_one()
         rows_query = text(
             """
             SELECT s.*, p.name as person_name, p.work_no
             FROM settlement s JOIN person p ON s.person_id=p.id
             """
-            + where_clause + 
+            + where_clause +
             " ORDER BY s.period_start DESC, s.id DESC LIMIT :limit OFFSET :offset"
         )
+        if bindparams_list:
+            rows_query = rows_query.bindparams(*bindparams_list)
         rows = conn.execute(rows_query, params).mappings().all()
     return {"list": [dict(r) for r in rows], "total": int(total)}
 

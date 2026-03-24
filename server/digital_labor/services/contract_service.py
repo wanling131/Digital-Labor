@@ -6,10 +6,11 @@ import shutil
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from digital_labor.db import get_engine
 from digital_labor.paths import get_paths
+from digital_labor.utils.permission import get_org_tree_ids
 
 logger = logging.getLogger(__name__)
 
@@ -296,25 +297,37 @@ def template_file_path(template_id: int) -> Optional[str]:
     return abs_path
 
 
-def status_list(*, status: Optional[str], limit: int, offset: int) -> dict:
+def status_list(*, status: Optional[str], limit: int, offset: int, actor_org_id: Optional[int] = None) -> dict:
     where = []
     params: Dict[str, Any] = {"limit": limit, "offset": offset}
+    bindparams_list = []
     if status:
         where.append("ci.status = :status")
         params["status"] = status
+    if actor_org_id is not None:
+        # 实现基于组织树的数据范围控制
+        org_ids = get_org_tree_ids(actor_org_id)
+        if org_ids:
+            where.append("p.org_id IN :_org_ids")
+            params["_org_ids"] = org_ids
+            bindparams_list.append(bindparam("_org_ids", expanding=True))
     where_clause = " WHERE " + " AND ".join(where) if where else ""
     engine = get_engine()
     with engine.connect() as conn:
-        total_query = text("SELECT COUNT(*) FROM contract_instance ci" + where_clause)
+        total_query = text("SELECT COUNT(*) FROM contract_instance ci JOIN person p ON ci.person_id=p.id" + where_clause)
+        if bindparams_list:
+            total_query = total_query.bindparams(*bindparams_list)
         total = conn.execute(total_query, params).scalar_one()
         rows_query = text(
             """
             SELECT ci.*, p.name as person_name, p.work_no
             FROM contract_instance ci JOIN person p ON ci.person_id=p.id
             """
-            + where_clause + 
+            + where_clause +
             " ORDER BY ci.id DESC LIMIT :limit OFFSET :offset"
         )
+        if bindparams_list:
+            rows_query = rows_query.bindparams(*bindparams_list)
         rows = conn.execute(rows_query, params).mappings().all()
     return {"list": [dict(r) for r in rows], "total": int(total)}
 
@@ -343,20 +356,28 @@ def launch(*, template_id: Optional[int], title: str, person_ids: List[int], dea
     return {"ok": True, "count": len(person_ids)}
 
 
-def archive_list(*, filters: Dict[str, Any], limit: int, offset: int) -> dict:
+def archive_list(*, filters: Dict[str, Any], limit: int, offset: int, actor_org_id: Optional[int] = None) -> dict:
     person_id = filters.get("person_id")
     org_id = filters.get("org_id")
     title = filters.get("title")
     date_from = filters.get("date_from")
     date_to = filters.get("date_to")
+    # 如果传入了actor_org_id，覆盖用户选择的org_id
+    if actor_org_id is not None:
+        org_id = actor_org_id
     where = ["ci.status = '已签署'"]
     params: Dict[str, Any] = {"limit": limit, "offset": offset}
+    bindparams_list = []
     if person_id:
         where.append("ci.person_id = :pid")
         params["pid"] = int(person_id)
     if org_id:
-        where.append("p.org_id = :oid")
-        params["oid"] = int(org_id)
+        # 实现基于组织树的数据范围控制
+        org_ids = get_org_tree_ids(int(org_id))
+        if org_ids:
+            where.append("p.org_id IN :_org_ids")
+            params["_org_ids"] = org_ids
+            bindparams_list.append(bindparam("_org_ids", expanding=True))
     if title:
         where.append("LOWER(ci.title) LIKE LOWER(:title)")
         params["title"] = f"%{title}%"
@@ -370,6 +391,8 @@ def archive_list(*, filters: Dict[str, Any], limit: int, offset: int) -> dict:
     engine = get_engine()
     with engine.connect() as conn:
         total_query = text("SELECT COUNT(*) FROM contract_instance ci JOIN person p ON ci.person_id=p.id" + where_clause)
+        if bindparams_list:
+            total_query = total_query.bindparams(*bindparams_list)
         total = conn.execute(total_query, params).scalar_one()
         rows_query = text(
             """
@@ -378,9 +401,11 @@ def archive_list(*, filters: Dict[str, Any], limit: int, offset: int) -> dict:
             JOIN person p ON ci.person_id=p.id
             LEFT JOIN org o ON p.org_id=o.id
             """
-            + where_clause + 
+            + where_clause +
             " ORDER BY ci.signed_at DESC LIMIT :limit OFFSET :offset"
         )
+        if bindparams_list:
+            rows_query = rows_query.bindparams(*bindparams_list)
         rows = conn.execute(rows_query, params).mappings().all()
     return {"list": [dict(r) for r in rows], "total": int(total)}
 

@@ -168,6 +168,8 @@ CREATE TABLE IF NOT EXISTS op_log (
   action TEXT,
   detail TEXT,
   result TEXT,
+  data_before TEXT,
+  data_after TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -245,6 +247,14 @@ CREATE INDEX IF NOT EXISTS idx_person_id_card ON person(id_card);
 CREATE INDEX IF NOT EXISTS idx_op_log_created_at ON op_log(created_at);
 CREATE INDEX IF NOT EXISTS idx_attendance_org_id ON attendance(org_id);
 CREATE INDEX IF NOT EXISTS idx_settlement_status ON settlement(status);
+CREATE INDEX IF NOT EXISTS idx_person_contract_signed ON person(contract_signed);
+CREATE INDEX IF NOT EXISTS idx_contract_instance_signed_at ON contract_instance(signed_at);
+CREATE INDEX IF NOT EXISTS idx_contract_instance_status_person ON contract_instance(status, person_id);
+CREATE INDEX IF NOT EXISTS idx_op_log_user_id ON op_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_op_log_module ON op_log(module);
+CREATE INDEX IF NOT EXISTS idx_user_username ON "user"(username);
+CREATE INDEX IF NOT EXISTS idx_user_org_id ON "user"(org_id);
+CREATE INDEX IF NOT EXISTS idx_user_enabled ON "user"(enabled);
 
 COMMIT;
 

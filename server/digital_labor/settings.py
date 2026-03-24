@@ -61,6 +61,12 @@ class Settings:
     # 设置为空字符串可禁用演示密码登录
     worker_demo_password: str = os.getenv("WORKER_DEMO_PASSWORD", "")
 
+    # e签宝配置（电子签章服务对接）
+    # 配置后系统将使用 e签宝进行合同签署，否则使用本地 PDF 签署
+    esign_app_id: str = os.getenv("ESIGN_APP_ID", "")
+    esign_app_secret: str = os.getenv("ESIGN_APP_SECRET", "")
+    esign_api_host: str = os.getenv("ESIGN_API_HOST", "https://openapi.esign.cn")
+
 
 settings = Settings()
 

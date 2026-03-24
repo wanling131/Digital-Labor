@@ -19,11 +19,13 @@ from digital_labor.services.aliyun_face_service import (
     verify_person as aliyun_verify_person,
     detect_liveness as aliyun_detect_liveness,
 )
+from digital_labor.utils.permission import get_org_tree_ids
 from digital_labor.services.person_service import (
     Page,
     archive_create as svc_archive_create,
     archive_delete as svc_archive_delete,
     batch_import_from_excel as svc_batch_import_from_excel,
+    generate_error_excel as svc_generate_error_excel,
     archive_get as svc_archive_get,
     archive_list as svc_archive_list,
     archive_update as svc_archive_update,
@@ -213,7 +215,15 @@ def archive_delete(request: Request, person_id: int):
 
 
 @router.post("/batch-import")
-async def batch_import(request: Request, file: UploadFile, default_job_title: Optional[str] = Form(None)):
+async def batch_import(request: Request, file: UploadFile, default_job_title: Optional[str] = Form(None), skip_errors: Optional[str] = Form("true")):
+    """
+    批量导入人员。
+
+    Args:
+        file: Excel 文件
+        default_job_title: 默认工种
+        skip_errors: 是否跳过错误行继续导入（默认 true）
+    """
     resp = require_permission(request, "person:import")
     if resp is not None:
         return resp
@@ -221,17 +231,31 @@ async def batch_import(request: Request, file: UploadFile, default_job_title: Op
         return err(400, "请上传文件")
     try:
         data = await file.read()
-        r = svc_batch_import_from_excel(data, default_job_title=(default_job_title or "").strip() or None)
+        skip = skip_errors.lower() in ("true", "1", "yes") if skip_errors else True
+        r = svc_batch_import_from_excel(data, default_job_title=(default_job_title or "").strip() or None, skip_errors=skip)
     except ValueError as e:
         return err(400, str(e))
     except RuntimeError as e:
         return err(500, str(e))
-    if r.get("errors"):
+
+    # 返回详细的导入结果
+    result = {
+        "ok": True,
+        "imported": r["imported"],
+        "total": r["total"],
+        "error_count": len(r.get("errors", [])),
+        "errors": r.get("errors", [])[:20],  # 只返回前20个错误
+        "error_rows": r.get("error_rows", []),
+        "message": f"成功导入 {r['imported']} 条数据" + (f"，{len(r.get('errors', []))} 行数据有误" if r.get("errors") else "")
+    }
+
+    if r.get("errors") and r["imported"] == 0:
         return JSONResponse(
             status_code=400,
-            content={"message": "数据验证失败", "errors": r["errors"]},
+            content={"message": "数据验证失败", **result},
         )
-    return ok({"ok": True, "imported": r["imported"], "total": r["total"], "message": f"成功导入 {r['imported']} 条数据"})
+
+    return ok(result)
 
 
 @router.get("/import-template")
@@ -290,6 +314,14 @@ def auth_list(request: Request):
     job_title = q.get("job_title")
     pg = parse_pagination(q)
 
+    # 获取当前用户的组织权限
+    u = get_user(request) or {}
+    actor_org_id = None
+    if u.get("role") != "admin" and u.get("orgId") is not None:
+        actor_org_id = int(u["orgId"])
+        # 如果用户有组织限制，覆盖请求中的org_id
+        org_id = actor_org_id
+
     # 仅使用固定条件片段 + 参数绑定，避免将用户输入拼入 SQL 字符串
     conditions: List[str] = []
     params: Dict[str, Any] = {"limit": pg.limit, "offset": pg.offset}
@@ -301,8 +333,11 @@ def auth_list(request: Request):
         conditions.append("p.status = :status")
         params["status"] = status
     if org_id:
-        conditions.append("p.org_id = :org_id")
-        params["org_id"] = int(org_id)
+        # 实现基于组织树的数据范围控制
+        org_ids = get_org_tree_ids(int(org_id))
+        if org_ids:
+            conditions.append("p.org_id IN :_org_ids")
+            params["_org_ids"] = org_ids
     if job_title:
         conditions.append("p.job_title = :job_title")
         params["job_title"] = job_title

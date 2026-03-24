@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import time
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-from digital_labor.auth.passwords import hash_password, is_bcrypt_hash, verify_password
+from digital_labor.auth.passwords import hash_password, is_bcrypt_hash, verify_password, validate_password_strength
 from digital_labor.db import get_engine
 
 
@@ -631,19 +631,101 @@ def op_log_list(limit: int, offset: int) -> dict:
     return {"list": [dict(r) for r in rows], "total": int(total)}
 
 
-def op_log_add(user_id: int, username: str, module: str, action: str, detail: str, result: str) -> None:
-    """添加操作日志"""
+def op_log_with_diff(
+    user_id: int,
+    username: str,
+    module: str,
+    action: str,
+    entity_type: str,
+    entity_id: Optional[int],
+    data_before: Optional[Dict[str, Any]],
+    data_after: Optional[Dict[str, Any]],
+    result: str = "成功"
+) -> None:
+    """
+    记录带数据对比的操作日志。
+
+    自动计算变更字段并生成详情。
+
+    Args:
+        user_id: 操作用户ID
+        username: 操作用户名
+        module: 操作模块
+        action: 操作动作
+        entity_type: 实体类型（如"人员"、"合同"等）
+        entity_id: 实体ID
+        data_before: 操作前数据快照
+        data_after: 操作后数据快照
+        result: 操作结果
+    """
+    import json
+
+    # 生成详情
+    detail_parts = [f"{entity_type}"]
+    if entity_id:
+        detail_parts.append(f"ID: {entity_id}")
+
+    # 计算变更字段
+    if data_before and data_after:
+        changed_fields = []
+        all_keys = set(data_before.keys()) | set(data_after.keys())
+        for key in all_keys:
+            if key in ('updated_at', 'created_at', 'password_hash'):
+                continue  # 跳过自动更新字段
+            old_val = data_before.get(key)
+            new_val = data_after.get(key)
+            if old_val != new_val:
+                changed_fields.append(key)
+        if changed_fields:
+            detail_parts.append(f"变更字段: {', '.join(changed_fields)}")
+    elif data_after and not data_before:
+        detail_parts.append("新建")
+    elif data_before and not data_after:
+        detail_parts.append("删除")
+
+    detail = " | ".join(detail_parts)
+
+    op_log_add(
+        user_id=user_id,
+        username=username,
+        module=module,
+        action=action,
+        detail=detail,
+        result=result,
+        data_before=data_before,
+        data_after=data_after
+    )
+
+
+def op_log_add(user_id: int, username: str, module: str, action: str, detail: str, result: str, data_before: Optional[Dict[str, Any]] = None, data_after: Optional[Dict[str, Any]] = None) -> None:
+    """
+    添加操作日志，支持记录操作前后数据对比。
+
+    Args:
+        user_id: 操作用户ID
+        username: 操作用户名
+        module: 操作模块
+        action: 操作动作
+        detail: 操作详情
+        result: 操作结果
+        data_before: 操作前数据快照（可选）
+        data_after: 操作后数据快照（可选）
+    """
+    import json
+
     engine = get_engine()
     with engine.begin() as conn:
         conn.execute(
-            text("INSERT INTO op_log (user_id, username, module, action, detail, result) VALUES (:user_id, :username, :module, :action, :detail, :result)"),
+            text("INSERT INTO op_log (user_id, username, module, action, detail, result, data_before, data_after) VALUES (:user_id, :username, :module, :action, :detail, :result, :data_before, :data_after)"),
             {
                 "user_id": user_id,
                 "username": username,
                 "module": module,
                 "action": action,
                 "detail": detail,
-                "result": result
+                "result": result,
+                "data_before": json.dumps(data_before, ensure_ascii=False, default=str) if data_before else None,
+                "data_after": json.dumps(data_after, ensure_ascii=False, default=str) if data_after else None
             }
         )
 
@@ -687,16 +769,23 @@ def profile_update(user_id: int, patch: Dict[str, Any]) -> None:
         conn.execute(query, params)
 
 
-def change_password(user_id: int, old_password: str, new_password: str) -> str:
+def change_password(user_id: int, old_password: str, new_password: str) -> Tuple[str, List[str]]:
     """
     修改当前用户密码。支持旧明文存储的渐进迁移。
     返回:
-      - "ok" 正常修改
-      - "bad_old_password" 旧密码不匹配
-      - "no_user" 用户不存在
+      - ("ok", []) 正常修改
+      - ("bad_old_password", []) 旧密码不匹配
+      - ("no_user", []) 用户不存在
+      - ("weak_password", [errors]) 密码强度不足
     """
     if not new_password:
         raise ValueError("新密码不能为空")
+
+    # 密码强度校验
+    is_strong, strength_errors = validate_password_strength(new_password)
+    if not is_strong:
+        return "weak_password", strength_errors
+
     engine = get_engine()
     with engine.connect() as conn:
         row = conn.execute(
@@ -704,20 +793,20 @@ def change_password(user_id: int, old_password: str, new_password: str) -> str:
             {"id": user_id},
         ).mappings().first()
     if not row:
-        return "no_user"
+        return "no_user", []
     current = (row or {}).get("password_hash") or ""
     if is_bcrypt_hash(current):
         if not verify_password(old_password, current):
-            return "bad_old_password"
+            return "bad_old_password", []
     else:
         if str(current) != str(old_password):
-            return "bad_old_password"
+            return "bad_old_password", []
     with engine.begin() as conn:
         conn.execute(
             text('UPDATE "user" SET password_hash = :p WHERE id = :id'),
             {"p": hash_password(new_password), "id": user_id},
         )
-    return "ok"
+    return "ok", []
 
 
 @dataclass

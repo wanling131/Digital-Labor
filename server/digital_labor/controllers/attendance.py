@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import datetime as dt
-import re
-from typing import Any, Dict, Optional
+import io
+from typing import Any, Dict
 
 from fastapi import APIRouter, Request, UploadFile
 from digital_labor.pagination import parse_pagination
@@ -11,7 +10,7 @@ from digital_labor.services.attendance_service import clock_log as svc_clock_log
 from digital_labor.services.attendance_service import import_from_excel_rows as svc_import_from_excel_rows
 from digital_labor.services.attendance_service import my_attendance as svc_my_attendance
 from digital_labor.services.attendance_service import report as svc_report
-from digital_labor.web.middleware import require_worker
+from digital_labor.web.middleware import get_user, require_worker
 from digital_labor.web.response import err, ok
 
 
@@ -41,26 +40,12 @@ async def import_excel(file: UploadFile):
 @router.get("/report")
 def report(request: Request):
     q = dict(request.query_params)
-    person_id = q.get("person_id")
-    org_id = q.get("org_id")
-    start = q.get("start")
-    end = q.get("end")
     pg = parse_pagination(q, default_page_size=50, max_page_size=100)
-    where = []
-    params: Dict[str, Any] = {"limit": pg.limit, "offset": pg.offset}
-    if person_id:
-        where.append("a.person_id = :pid")
-        params["pid"] = int(person_id)
-    if org_id:
-        where.append("(a.org_id = :oid OR p.org_id = :oid)")
-        params["oid"] = int(org_id)
-    if start:
-        where.append("DATE(a.work_date) >= DATE(:start)")
-        params["start"] = start
-    if end:
-        where.append("DATE(a.work_date) <= DATE(:end)")
-        params["end"] = end
-    return ok(svc_report(filters=q, limit=pg.limit, offset=pg.offset))
+    u = get_user(request) or {}
+    actor_org_id = None
+    if u.get("role") != "admin" and u.get("orgId") is not None:
+        actor_org_id = int(u["orgId"])
+    return ok(svc_report(filters=q, limit=pg.limit, offset=pg.offset, actor_org_id=actor_org_id))
 
 
 @router.get("/my")
@@ -90,24 +75,10 @@ def clock(request: Request, body: Dict[str, Any]):
 @router.get("/log")
 def clock_log(request: Request):
     q = dict(request.query_params)
-    person_id = q.get("person_id")
-    org_id = q.get("org_id")
-    start = q.get("start")
-    end = q.get("end")
     pg = parse_pagination(q, default_page_size=50, max_page_size=200)
-    where = []
-    params: Dict[str, Any] = {"limit": pg.limit, "offset": pg.offset}
-    if person_id:
-        where.append("c.person_id = :pid")
-        params["pid"] = int(person_id)
-    if org_id:
-        where.append("p.org_id = :oid")
-        params["oid"] = int(org_id)
-    if start:
-        where.append("c.punch_at >= :start")
-        params["start"] = start
-    if end:
-        where.append("c.punch_at <= :end")
-        params["end"] = f"{end} 23:59:59"
-    return ok(svc_clock_log(filters=q, limit=pg.limit, offset=pg.offset))
+    u = get_user(request) or {}
+    actor_org_id = None
+    if u.get("role") != "admin" and u.get("orgId") is not None:
+        actor_org_id = int(u["orgId"])
+    return ok(svc_clock_log(filters=q, limit=pg.limit, offset=pg.offset, actor_org_id=actor_org_id))
 
