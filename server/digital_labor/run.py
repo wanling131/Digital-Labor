@@ -130,6 +130,11 @@ def create_app() -> FastAPI:
             except Exception as e:  # noqa: BLE001
                 logging.warning("Migration run_performance_indexes failed: %s", e)
             try:
+                from digital_labor.db_migrations import run_op_log_data_columns_migration
+                run_op_log_data_columns_migration()
+            except Exception as e:  # noqa: BLE001
+                logging.warning("Migration run_op_log_data_columns failed: %s", e)
+            try:
                 from digital_labor.services.sys_admin_service import seed_op_log_if_empty
                 seed_op_log_if_empty()
             except Exception as e:  # noqa: BLE001

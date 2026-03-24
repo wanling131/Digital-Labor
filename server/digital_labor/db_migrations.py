@@ -138,11 +138,40 @@ def ensure_user_role_has_export_permission() -> None:
     logger.info("Migration: user role person:export ensured")
 
 
+def run_op_log_data_columns_migration() -> None:
+    """为 op_log 表添加 data_before、data_after 字段（已有则跳过）。"""
+    engine = get_engine()
+    with engine.connect() as conn:
+        if IS_SQLITE:
+            _run_sqlite_migration(
+                conn,
+                "ALTER TABLE op_log ADD COLUMN data_before TEXT",
+                "data_before",
+            )
+            _run_sqlite_migration(
+                conn,
+                "ALTER TABLE op_log ADD COLUMN data_after TEXT",
+                "data_after",
+            )
+        else:
+            _run_pg_migration(
+                conn,
+                "ALTER TABLE op_log ADD COLUMN IF NOT EXISTS data_before TEXT",
+            )
+            _run_pg_migration(
+                conn,
+                "ALTER TABLE op_log ADD COLUMN IF NOT EXISTS data_after TEXT",
+            )
+        conn.commit()
+    logger.info("Migration: op_log data columns ensured")
+
+
 def run_all_migrations() -> None:
     """运行所有迁移。"""
     run_job_title_config_migration()
     run_attendance_overtime_migration()
     run_role_org_scope_migration()
+    run_op_log_data_columns_migration()
     ensure_user_role_has_export_permission()
     run_performance_indexes()
     logger.info("All migrations completed")
